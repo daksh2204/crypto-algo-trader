@@ -1,0 +1,38 @@
+{
+  "summary": "Full backend + frontend testing for QuantEdge algo crypto trading dashboard. 16/16 backend pytest cases pass (health, market data, signals with Claude AI, portfolio, manual trades, bot start/stop, metrics). Frontend dashboard renders fully with TopBar, MarketStrip, PriceChart, BotControl strategies, AIInsights (HOLD/72% confidence with full reasoning + key factors), LiveSignals, TradeHistory, PortfolioPanel, ManualTradePanel. Manual BUY, ticker switching, AI signal generation (~30s), bot start/stop, and portfolio reset all work end-to-end against the public preview URL.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/metrics", "issue": "Filters closed trades by type in ('CLOSE','STOP_LOSS','TAKE_PROFIT') only — manual SELL trades use type='MANUAL', so they are NOT counted in win_rate_pct / total_pnl / total_trades. Either include 'MANUAL' SELL (side=='SELL') in closed-trade filter, or tag manual closes with type='CLOSE'."},
+      {"endpoint": "/api/trades/manual (SELL)", "issue": "Returned trade has entry_price set to current price (matches BUY because same-second test). Code in server.py line 280 passes entry_price=pos['entry_price'] correctly, but pnl came back as 0.0 because price didn't move — expected, no bug."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PriceChart initial mount", "issues": ["Recharts console warning: 'The width(-1) and height(-1) of chart should be greater than 0' fires 4x on initial render — ResponsiveContainer parent likely has 0 height before layout settles. Cosmetic, chart renders correctly after."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Update /api/metrics in server.py to also count manual SELL trades (or change _log_trade to set type='CLOSE' for manual sells with non-zero pnl) so win_rate_pct, total_pnl, total_trades reflect manual paper trades.",
+    "Optional: silence recharts width/height warning by giving chart container an explicit min-height while data loads."
+  ],
+  "critical_code_review_comments": [
+    "server.py: /api/signals/{symbol} action-resolution ternary (line 122) is hard to read; extract to a helper that picks BUY/SELL/HOLD between classical and AI per documented logic.",
+    "server.py: ObjectId is properly excluded via projection {'_id':0} on list endpoints and pop on /signals — good.",
+    "server.py: bot_status endpoint relies on bot.status() being sync — verify under load that bot.config dict mutation in /bot/config is thread-safe with the running loop.",
+    "Metrics ignore manual SELL closures (see backend minor).",
+    "Frontend uses REACT_APP_BACKEND_URL correctly, all interactive controls have data-testid as required.",
+    "EMERGENT_LLM_KEY is read at call time inside ai_signals._get_key — good for hot reload."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% of tested flows"},
+  "test_credentials": "None — no auth required.",
+  "seed_data_creation": "Portfolio reset to $10,000 via POST /api/portfolio/reset; BUY 500 USD ETHUSDT then SELL same; one BTCUSDT $500 manual BUY left open after frontend run (recommend reset before next iteration).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test suite at /app/backend/tests/backend_test.py is the source of truth (16 tests, ~18s). Trade documents use field 'side' for BUY/SELL and 'type' for source ('MANUAL','BOT','CLOSE','STOP_LOSS','TAKE_PROFIT'). AI signal endpoint takes ~25-40s — keep timeout >=60s. After tests run, an open BTCUSDT position remains in paper portfolio; call POST /api/portfolio/reset to clean up. Frontend stop-bot-btn only mounts when bot is running (toggle render), not a bug.",
+  "rca of the issue": "Metrics-vs-manual-trades RCA: /api/metrics line 216 in server.py filters closed = [t for t in trades if t['type'] in ('CLOSE','STOP_LOSS','TAKE_PROFIT')]. _log_trade in bot.py records manual sells with type='MANUAL' (passed from server.py line 280). Result: any manual paper-trade round-trip never increments wins/losses/total_pnl. Mitigation: either change filter to include side=='SELL' with non-zero pnl, or in /api/trades/manual SELL branch pass source='CLOSE' to _log_trade."
+}
