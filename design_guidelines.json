@@ -1,0 +1,112 @@
+{
+  "theme": "dark",
+  "archetype": "Archetype 2: Performance Pro",
+  "tone": "Command-center focus, tactical, precision-oriented, algorithmic trading terminal",
+  "colors": {
+    "background": "#0A0A0A",
+    "surface": "#121212",
+    "surface_elevated": "#1A1A1A",
+    "primary": "#007AFF",
+    "primary_hover": "#0056b3",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#A0A0A0",
+    "border": "rgba(255,255,255,0.1)",
+    "success": "#00E676",
+    "danger": "#FF3D00",
+    "warning": "#FFC107"
+  },
+  "typography": {
+    "heading_font": "IBM Plex Sans",
+    "body_font": "IBM Plex Sans",
+    "mono_font": "JetBrains Mono",
+    "font_weights": {
+      "light": 300,
+      "regular": 400,
+      "medium": 500,
+      "bold": 700
+    },
+    "scale": {
+      "h1": "text-4xl tracking-tight font-medium",
+      "h2": "text-2xl tracking-tight font-medium",
+      "h3": "text-xl font-medium",
+      "body": "text-sm",
+      "small": "text-xs tracking-[0.2em] uppercase",
+      "numbers": "font-mono tracking-tight"
+    }
+  },
+  "layout": {
+    "container": "w-full min-h-screen bg-[#0A0A0A] text-white p-2 md:p-4",
+    "grid": "grid grid-cols-1 md:grid-cols-12 gap-4 auto-rows-min",
+    "spacing": {
+      "widget_padding": "p-4 md:p-6",
+      "section_gap": "gap-4 md:gap-6"
+    },
+    "surfaces": {
+      "strategy": "Grid Borders",
+      "classes": "bg-[#121212] border border-white/10 rounded-md overflow-hidden flex flex-col h-full"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#007AFF] text-white hover:bg-[#0056b3] transition-colors rounded-sm px-4 py-2 font-medium tracking-wide data-[testid]:true",
+      "secondary": "bg-transparent border border-white/20 text-white hover:bg-white/5 transition-colors rounded-sm px-4 py-2 data-[testid]:true",
+      "danger": "bg-[#FF3D00] text-white hover:bg-[#D50000] transition-colors rounded-sm px-4 py-2 data-[testid]:true"
+    },
+    "cards": {
+      "default": "bg-[#121212] border border-white/10 p-5 rounded-md shadow-sm"
+    },
+    "inputs": {
+      "default": "bg-[#0A0A0A] border border-white/20 text-white px-3 py-2 rounded-sm focus:border-[#007AFF] focus:ring-1 focus:ring-[#007AFF] outline-none transition-all font-mono text-sm w-full data-[testid]:true"
+    },
+    "charts": {
+      "library": "recharts",
+      "tooltip": "bg-[#0A0A0A] border border-white/10 p-3 shadow-lg rounded-sm font-mono text-sm"
+    },
+    "badges": {
+      "success": "bg-[#00E676]/10 text-[#00E676] border border-[#00E676]/20 px-2 py-0.5 text-xs font-mono rounded-sm",
+      "danger": "bg-[#FF3D00]/10 text-[#FF3D00] border border-[#FF3D00]/20 px-2 py-0.5 text-xs font-mono rounded-sm",
+      "live": "bg-[#00E676]/20 text-[#00E676] px-2 py-1 text-xs font-bold tracking-widest uppercase flex items-center gap-2 rounded-sm",
+      "paper": "bg-[#FFC107]/20 text-[#FFC107] px-2 py-1 text-xs font-bold tracking-widest uppercase flex items-center gap-2 rounded-sm"
+    }
+  },
+  "icons": {
+    "library": "@phosphor-icons/react",
+    "style": "duotone or regular",
+    "install": "yarn add @phosphor-icons/react"
+  },
+  "media": {
+    "image_urls": [
+      {
+        "url": "https://images.pexels.com/photos/29611783/pexels-photo-29611783.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "ai_insights_bg",
+        "description": "Close-up candlestick chart, apply heavy black overlay (bg-black/80) to use as background for AI Market Insights panel to give it depth."
+      },
+      {
+        "url": "https://images.pexels.com/photos/14911424/pexels-photo-14911424.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "category": "portfolio_hero",
+        "description": "Ethereum and Bitcoin coins image, apply black gradient overlay, use behind the top Portfolio Balance section."
+      }
+    ]
+  },
+  "motion": {
+    "hover": "transition-all duration-200 ease-in-out",
+    "chart_animation": "animate-fade-in",
+    "live_indicator": "animate-pulse"
+  },
+  "accessibility": {
+    "contrast": "WCAG AA compliant (APCA preferred)",
+    "focus": "focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:ring-offset-2 focus:ring-offset-[#0A0A0A]",
+    "testing": "All interactive elements MUST use data-testid"
+  },
+  "instructions_to_main_agent": [
+    "Install and use @phosphor-icons/react.",
+    "Implement the layout as a dense, control-room style grid (Grid Borders strategy) with minimal padding between major widgets. Avoid 'card-heavy' looks in favor of a cohesive panel feel.",
+    "Ensure 'JetBrains Mono' is used for ALL numbers, pricing data, percentages, and logs.",
+    "Ensure 'IBM Plex Sans' is used for headers and descriptive text.",
+    "In the Main Chart section, implement real-time feeling candlestick or line charts using Recharts.",
+    "In the AI Market Insights panel, use the `ai_insights_bg` image with a very heavy dark overlay so the text remains high-contrast.",
+    "The layout should consist of a Top Nav/Status Bar (Mode Toggle, General Stats), Main Chart (Large), Bot Control & Settings panel, Live Signals Feed, and Trade History table at the bottom.",
+    "Use data-testid attributes on every button, input, tab, and toggle for testing.",
+    "The primary action color is #007AFF, but use #00E676 and #FF3D00 strictly for financial up/down states."
+  ]
+}
