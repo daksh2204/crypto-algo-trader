@@ -40,3 +40,30 @@
 - Only long positions on spot pairs (no shorting in paper MVP)
 - Public Binance data only — no user-provided Binance API keys yet
 - AI signal call is synchronous (~20–40s); front-end uses "Analyzing…" state
+
+---
+
+## Iteration 2 — CoinDCX + Safety + Backtest + Alerts (2026-02-28)
+
+### Major changes
+- **Exchange migrated:** Binance USDT → CoinDCX INR (BTCINR, ETHINR, SOLINR, BNBINR, XRPINR, DOGEINR, ADAINR)
+- **Paper balance:** configurable ₹100–₹20,000 (default ₹3,000 to match user's wallet)
+- **Safety upgrades (all ON by default):**
+  - Trailing stop-loss
+  - Daily loss circuit breaker (default -5% → auto-stop bot)
+  - Minimum 2-strategy agreement before execution
+  - Position size 5% of balance (down from 10%)
+  - Min confidence 0.65 (up from 0.55)
+  - Confidence aggregation rescaled to `avg(agreeing) + 0.1 * (count-1)`
+- **Backtesting engine** (`/api/backtest`) — historical simulation with full config; returns KPIs + equity curve + trades
+- **In-app Alerts** (`/api/alerts`) — levels INFO/SUCCESS/WARN/CRITICAL, auto-populated on bot events
+- **Tabs UI:** Live Trading | Backtest
+
+### Status
+- 18/18 backend tests pass
+- Frontend fully working (fmtUsd→fmtInr fix auto-applied by testing agent in LiveSignals.jsx)
+
+### Backlog
+- P1: CoinDCX authenticated trading API (HMAC SHA-256 signing) when user is ready to go live
+- P2: Email/Telegram notifications (user chose in-app only for now)
+- P2: Multi-symbol concurrent positions
