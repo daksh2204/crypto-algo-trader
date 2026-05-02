@@ -1,5 +1,5 @@
-import { fmtUsd, fmtPct } from "@/lib/api";
-import { Activity, TrendingUp, Zap, RefreshCw } from "lucide-react";
+import { fmtInr, fmtPct } from "@/lib/api";
+import { Activity, TrendingUp, Zap, RefreshCw, ShieldCheck } from "lucide-react";
 
 export default function TopBar({ portfolio, metrics, botStatus, onRefresh }) {
   const equity = portfolio?.total_equity ?? 0;
@@ -7,6 +7,7 @@ export default function TopBar({ portfolio, metrics, botStatus, onRefresh }) {
   const pnl = metrics?.total_pnl ?? 0;
   const win = metrics?.win_rate_pct ?? 0;
   const running = botStatus?.running;
+  const tripped = botStatus?.circuit_tripped;
 
   return (
     <div className="panel mb-3 md:mb-4" data-testid="top-bar">
@@ -17,25 +18,26 @@ export default function TopBar({ portfolio, metrics, botStatus, onRefresh }) {
           </div>
           <div>
             <div className="text-sm font-medium tracking-tight">QUANTEDGE</div>
-            <div className="kbd-label">Algo Crypto Terminal</div>
+            <div className="kbd-label">CoinDCX · INR Terminal</div>
           </div>
         </div>
 
-        <div className="flex-1 min-w-[200px] flex items-center gap-2">
-          <span className="kbd-label" data-testid="mode-badge">
-            <span className="inline-flex items-center gap-2 px-2 py-1 bg-[#FFC107]/15 text-[#FFC107] rounded-sm font-bold tracking-widest">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#FFC107] animate-pulse"></span>
-              PAPER
-            </span>
+        <div className="flex-1 min-w-[200px] flex items-center gap-2 flex-wrap">
+          <span className="kbd-label inline-flex items-center gap-2 px-2 py-1 bg-[#FFC107]/15 text-[#FFC107] rounded-sm font-bold tracking-widest" data-testid="mode-badge">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#FFC107] animate-pulse"></span>
+            PAPER
           </span>
-          <span className={`kbd-label inline-flex items-center gap-2 px-2 py-1 rounded-sm font-bold tracking-widest ${running ? "bg-[#00E676]/15 text-[#00E676]" : "bg-white/5 text-white/60"}`} data-testid="bot-status-badge">
-            <span className={`w-1.5 h-1.5 rounded-full ${running ? "bg-[#00E676] animate-pulse" : "bg-white/40"}`}></span>
-            {running ? "BOT RUNNING" : "BOT IDLE"}
+          <span className={`kbd-label inline-flex items-center gap-2 px-2 py-1 rounded-sm font-bold tracking-widest ${running ? "bg-[#00E676]/15 text-[#00E676]" : tripped ? "bg-[#FF3D00]/15 text-[#FF3D00]" : "bg-white/5 text-white/60"}`} data-testid="bot-status-badge">
+            <span className={`w-1.5 h-1.5 rounded-full ${running ? "bg-[#00E676] animate-pulse" : tripped ? "bg-[#FF3D00]" : "bg-white/40"}`}></span>
+            {running ? "BOT RUNNING" : tripped ? "CIRCUIT TRIPPED" : "BOT IDLE"}
+          </span>
+          <span className="kbd-label inline-flex items-center gap-1 text-[#00E676]">
+            <ShieldCheck className="w-3 h-3" /> SAFE MODE
           </span>
         </div>
 
-        <Stat icon={<TrendingUp className="w-3.5 h-3.5" />} label="Equity" value={fmtUsd(equity)} sub={<span className={ret >= 0 ? "text-[#00E676]" : "text-[#FF3D00]"}>{fmtPct(ret)}</span>} testid="stat-equity" />
-        <Stat icon={<Activity className="w-3.5 h-3.5" />} label="Total P&L" value={<span className={pnl >= 0 ? "text-[#00E676]" : "text-[#FF3D00]"}>{fmtUsd(pnl)}</span>} testid="stat-pnl" />
+        <Stat icon={<TrendingUp className="w-3.5 h-3.5" />} label="Equity" value={fmtInr(equity, 0)} sub={<span className={ret >= 0 ? "text-[#00E676]" : "text-[#FF3D00]"}>{fmtPct(ret)}</span>} testid="stat-equity" />
+        <Stat icon={<Activity className="w-3.5 h-3.5" />} label="Total P&L" value={<span className={pnl >= 0 ? "text-[#00E676]" : "text-[#FF3D00]"}>{fmtInr(pnl, 0)}</span>} testid="stat-pnl" />
         <Stat label="Win Rate" value={`${win.toFixed(1)}%`} testid="stat-winrate" />
         <Stat label="Trades" value={metrics?.total_trades ?? 0} testid="stat-trades" />
 

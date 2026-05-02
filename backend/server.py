@@ -11,12 +11,13 @@ import os, logging, uuid
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-from binance_api import (
-    DEFAULT_SYMBOLS, get_all_tickers, get_klines, get_price, get_ticker_24h,
+from coindcx_api import (
+    DEFAULT_SYMBOLS, get_all_tickers, get_klines, get_price, get_ticker_24h, CURRENCY, CURRENCY_SYMBOL,
 )
 from strategies import aggregate_signals, combined_indicators, STRATEGY_REGISTRY
 from ai_signals import generate_ai_signal
-from bot import TradingBot, get_or_create_portfolio, _log_trade, _save_portfolio
+from bot import TradingBot, get_or_create_portfolio, _log_trade, _save_portfolio, _add_alert
+from backtest import run_backtest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger("algo-trader")
@@ -38,6 +39,7 @@ app.add_middleware(
 
 bot = TradingBot(db)
 
+
 # -------------------- Models --------------------
 
 class BotConfig(BaseModel):
@@ -47,47 +49,66 @@ class BotConfig(BaseModel):
     use_ai: Optional[bool] = None
     loop_seconds: Optional[int] = None
     min_confidence: Optional[float] = None
+    min_strategies_agree: Optional[int] = None
     stop_loss_pct: Optional[float] = None
     take_profit_pct: Optional[float] = None
+    trailing_stop: Optional[bool] = None
     position_size_pct: Optional[float] = None
+    max_daily_loss_pct: Optional[float] = None
     mode: Optional[str] = None
 
 
 class ManualTrade(BaseModel):
     symbol: str
-    side: str  # BUY | SELL
-    quantity_usd: float = Field(gt=0)
+    side: str
+    quantity_inr: float = Field(gt=0)
+
+
+class BacktestRequest(BaseModel):
+    symbol: str = "BTCINR"
+    interval: str = "1h"
+    limit: int = Field(500, ge=80, le=1000)
+    strategies: List[str] = ["MA_CROSSOVER", "RSI", "MACD", "BOLLINGER"]
+    initial_balance: float = 3000.0
+    position_size_pct: float = 5.0
+    stop_loss_pct: float = 2.0
+    take_profit_pct: float = 5.0
+    min_confidence: float = 0.65
+    min_strategies_agree: int = 2
+    trailing_stop: bool = True
+
+
+class PortfolioReset(BaseModel):
+    initial_balance: float = Field(3000.0, ge=100, le=20000)
 
 
 # -------------------- Routes --------------------
 
 @api.get("/")
 async def root():
-    return {"message": "Algo crypto trading backend", "status": "ok"}
+    return {"message": "Algo crypto trading backend", "status": "ok", "exchange": "coindcx", "currency": CURRENCY}
 
 
 @api.get("/market/symbols")
 async def market_symbols():
-    return {"symbols": DEFAULT_SYMBOLS}
+    return {"symbols": DEFAULT_SYMBOLS, "currency": CURRENCY, "currency_symbol": CURRENCY_SYMBOL}
 
 
 @api.get("/market/tickers")
 async def market_tickers(symbols: Optional[str] = None):
     syms = symbols.split(",") if symbols else DEFAULT_SYMBOLS
     try:
-        data = await get_all_tickers(syms)
-        return {"tickers": data}
+        return {"tickers": await get_all_tickers(syms), "currency": CURRENCY}
     except Exception as e:
-        raise HTTPException(502, f"Binance error: {e}")
+        raise HTTPException(502, f"CoinDCX error: {e}")
 
 
 @api.get("/market/klines/{symbol}")
 async def market_klines(symbol: str, interval: str = "1h", limit: int = Query(200, ge=10, le=1000)):
     try:
-        data = await get_klines(symbol.upper(), interval, limit)
-        return {"symbol": symbol.upper(), "interval": interval, "klines": data}
+        return {"symbol": symbol.upper(), "interval": interval, "klines": await get_klines(symbol.upper(), interval, limit)}
     except Exception as e:
-        raise HTTPException(502, f"Binance error: {e}")
+        raise HTTPException(502, f"CoinDCX error: {e}")
 
 
 @api.get("/market/ticker/{symbol}")
@@ -95,7 +116,7 @@ async def market_ticker(symbol: str):
     try:
         return await get_ticker_24h(symbol.upper())
     except Exception as e:
-        raise HTTPException(502, f"Binance error: {e}")
+        raise HTTPException(502, f"CoinDCX error: {e}")
 
 
 @api.get("/signals/{symbol}")
@@ -109,17 +130,13 @@ async def signals(symbol: str, interval: str = "1h", use_ai: bool = True):
         agg = aggregate_signals(klines, list(STRATEGY_REGISTRY.keys()))
         ai = {"action": "HOLD", "confidence": 0, "reasoning": "AI disabled", "risk_level": "MEDIUM", "key_factors": []}
         if use_ai:
-            ai = await generate_ai_signal(
-                symbol,
-                {"price": klines[-1]["close"]},
-                indicators,
-                agg["per_strategy"],
-            )
+            ai = await generate_ai_signal(symbol, {"price": klines[-1]["close"]}, indicators, agg["per_strategy"])
+        action = agg["action"] if agg["action"] == ai["action"] else (agg["action"] if ai["action"] == "HOLD" else ai["action"] if agg["action"] == "HOLD" else "HOLD")
         doc = {
             "id": str(uuid.uuid4()),
             "symbol": symbol,
             "price": klines[-1]["close"],
-            "action": agg["action"] if agg["action"] == ai["action"] else (agg["action"] if ai["action"] == "HOLD" else ai["action"] if agg["action"] == "HOLD" else "HOLD"),
+            "action": action,
             "confidence": round((agg["confidence"] + float(ai.get("confidence", 0))) / 2, 2) if use_ai else agg["confidence"],
             "classical": agg,
             "ai": ai,
@@ -145,8 +162,7 @@ async def list_signals(limit: int = Query(30, ge=1, le=200)):
 
 @api.post("/bot/start")
 async def bot_start(cfg: BotConfig):
-    res = await bot.start(cfg.model_dump(exclude_none=True))
-    return res
+    return await bot.start(cfg.model_dump(exclude_none=True))
 
 
 @api.post("/bot/stop")
@@ -161,15 +177,13 @@ async def bot_status():
 
 @api.post("/bot/config")
 async def bot_update_config(cfg: BotConfig):
-    updates = cfg.model_dump(exclude_none=True)
-    bot.config.update(updates)
+    bot.config.update(cfg.model_dump(exclude_none=True))
     return {"ok": True, "config": bot.config}
 
 
 @api.get("/portfolio")
 async def portfolio():
     p = await get_or_create_portfolio(db)
-    # compute current market value
     positions = p.get("positions", [])
     total_positions_value = 0.0
     enriched = []
@@ -188,6 +202,7 @@ async def portfolio():
     return {
         "balance": p["balance"],
         "initial_balance": p["initial_balance"],
+        "currency": p.get("currency", "INR"),
         "positions": enriched,
         "total_positions_value": total_positions_value,
         "total_equity": total_equity,
@@ -196,12 +211,21 @@ async def portfolio():
 
 
 @api.post("/portfolio/reset")
-async def portfolio_reset():
+async def portfolio_reset(req: PortfolioReset):
     await db.portfolio.delete_one({"_id": "main"})
     await db.trades.delete_many({})
     await db.signals.delete_many({})
-    p = await get_or_create_portfolio(db)
-    return {"ok": True, "balance": p["balance"]}
+    await db.alerts.delete_many({})
+    await db.portfolio.insert_one({
+        "_id": "main",
+        "balance": req.initial_balance,
+        "initial_balance": req.initial_balance,
+        "currency": "INR",
+        "positions": [],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    await _add_alert(db, "INFO", "Portfolio reset", f"Starting balance: ₹{req.initial_balance:.0f}")
+    return {"ok": True, "balance": req.initial_balance}
 
 
 @api.get("/trades")
@@ -218,27 +242,16 @@ async def metrics():
     losses = [t for t in closed if t.get("pnl", 0) <= 0]
     total_pnl = sum(t.get("pnl", 0) for t in closed)
     wl_rate = (len(wins) / len(closed) * 100) if closed else 0
-    # Simple max drawdown on cumulative pnl curve
-    curve = []
-    cum = 0.0
+    curve, cum, peak, max_dd = [], 0.0, 0.0, 0.0
     for t in sorted(closed, key=lambda x: x["timestamp"]):
         cum += t.get("pnl", 0)
         curve.append(cum)
-    max_dd = 0.0
-    peak = 0.0
-    for c in curve:
-        if c > peak:
-            peak = c
-        dd = peak - c
-        if dd > max_dd:
-            max_dd = dd
+        if cum > peak:
+            peak = cum
+        max_dd = max(max_dd, peak - cum)
     return {
-        "total_trades": len(closed),
-        "wins": len(wins),
-        "losses": len(losses),
-        "win_rate_pct": wl_rate,
-        "total_pnl": total_pnl,
-        "max_drawdown": max_dd,
+        "total_trades": len(closed), "wins": len(wins), "losses": len(losses),
+        "win_rate_pct": wl_rate, "total_pnl": total_pnl, "max_drawdown": max_dd,
     }
 
 
@@ -252,33 +265,66 @@ async def manual_trade(t: ManualTrade):
     portfolio_doc = await get_or_create_portfolio(db)
     balance = portfolio_doc["balance"]
     positions = {p["symbol"]: p for p in portfolio_doc.get("positions", [])}
-
     if side == "BUY":
         if symbol in positions:
             raise HTTPException(400, "Already have an open position for this symbol")
-        if t.quantity_usd > balance:
+        if t.quantity_inr > balance:
             raise HTTPException(400, "Insufficient paper balance")
-        qty = t.quantity_usd / price
+        qty = t.quantity_inr / price
         new_pos = {
-            "symbol": symbol, "qty": qty, "entry_price": price,
+            "symbol": symbol, "qty": qty, "entry_price": price, "peak": price,
             "entry_time": datetime.now(timezone.utc).isoformat(),
             "stop_loss": price * (1 - bot.config["stop_loss_pct"] / 100),
             "take_profit": price * (1 + bot.config["take_profit_pct"] / 100),
         }
         positions[symbol] = new_pos
-        await _save_portfolio(db, balance - t.quantity_usd, list(positions.values()))
+        await _save_portfolio(db, balance - t.quantity_inr, list(positions.values()))
         doc = await _log_trade(db, symbol, "BUY", qty, price, "MANUAL", {"action": "BUY", "confidence": 1.0})
+        await _add_alert(db, "INFO", f"Manual BUY {symbol}", f"₹{t.quantity_inr:.0f} @ ₹{price:.2f}")
         return doc
     else:
         if symbol not in positions:
             raise HTTPException(400, "No open position to sell")
         pos = positions[symbol]
-        proceeds = pos["qty"] * price
         pnl = (price - pos["entry_price"]) * pos["qty"]
         del positions[symbol]
-        await _save_portfolio(db, balance + proceeds, list(positions.values()))
+        await _save_portfolio(db, balance + pos["qty"] * price, list(positions.values()))
         doc = await _log_trade(db, symbol, "SELL", pos["qty"], price, "MANUAL", {"action": "SELL", "confidence": 1.0}, pnl=pnl, entry_price=pos["entry_price"])
+        await _add_alert(db, "SUCCESS" if pnl >= 0 else "WARN", f"Manual SELL {symbol}", f"P&L ₹{pnl:.2f}")
         return doc
+
+
+@api.get("/alerts")
+async def list_alerts(limit: int = Query(50, ge=1, le=200)):
+    docs = await db.alerts.find({}, {"_id": 0}).sort("timestamp", -1).to_list(limit)
+    return {"alerts": docs}
+
+
+@api.post("/alerts/clear")
+async def clear_alerts():
+    await db.alerts.delete_many({})
+    return {"ok": True}
+
+
+@api.post("/backtest")
+async def backtest(req: BacktestRequest):
+    try:
+        klines = await get_klines(req.symbol.upper(), req.interval, req.limit)
+        if len(klines) < 80:
+            raise HTTPException(400, "Not enough historical data")
+        result = run_backtest(
+            klines, req.strategies, req.initial_balance,
+            req.position_size_pct, req.stop_loss_pct, req.take_profit_pct,
+            req.min_confidence, req.min_strategies_agree, req.trailing_stop,
+        )
+        if "error" in result:
+            raise HTTPException(400, result["error"])
+        return {"symbol": req.symbol.upper(), "interval": req.interval, **result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("backtest error")
+        raise HTTPException(500, str(e))
 
 
 app.include_router(api)

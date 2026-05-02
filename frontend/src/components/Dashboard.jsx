@@ -9,9 +9,11 @@ import LiveSignals from "@/components/LiveSignals";
 import TradeHistory from "@/components/TradeHistory";
 import PortfolioPanel from "@/components/PortfolioPanel";
 import ManualTradePanel from "@/components/ManualTradePanel";
+import AlertsPanel from "@/components/AlertsPanel";
+import BacktestPanel from "@/components/BacktestPanel";
 
 export default function Dashboard() {
-  const [symbol, setSymbol] = useState("BTCUSDT");
+  const [symbol, setSymbol] = useState("BTCINR");
   const [interval, setInterval_] = useState("1h");
   const [tickers, setTickers] = useState([]);
   const [portfolio, setPortfolio] = useState(null);
@@ -19,33 +21,19 @@ export default function Dashboard() {
   const [botStatus, setBotStatus] = useState({ running: false, config: {} });
   const [signal, setSignal] = useState(null);
   const [signalLoading, setSignalLoading] = useState(false);
+  const [tab, setTab] = useState("trade"); // trade | backtest
 
   const loadTickers = useCallback(async () => {
-    try {
-      const { data } = await api.get("/market/tickers");
-      setTickers(data.tickers || []);
-    } catch (e) { console.error(e); }
+    try { const { data } = await api.get("/market/tickers"); setTickers(data.tickers || []); } catch {}
   }, []);
-
   const loadPortfolio = useCallback(async () => {
-    try {
-      const { data } = await api.get("/portfolio");
-      setPortfolio(data);
-    } catch (e) { console.error(e); }
+    try { const { data } = await api.get("/portfolio"); setPortfolio(data); } catch {}
   }, []);
-
   const loadMetrics = useCallback(async () => {
-    try {
-      const { data } = await api.get("/metrics");
-      setMetrics(data);
-    } catch (e) { console.error(e); }
+    try { const { data } = await api.get("/metrics"); setMetrics(data); } catch {}
   }, []);
-
   const loadBot = useCallback(async () => {
-    try {
-      const { data } = await api.get("/bot/status");
-      setBotStatus(data);
-    } catch (e) { console.error(e); }
+    try { const { data } = await api.get("/bot/status"); setBotStatus(data); } catch {}
   }, []);
 
   const loadSignal = useCallback(async (sym, iv, ai = true) => {
@@ -53,66 +41,63 @@ export default function Dashboard() {
     try {
       const { data } = await api.get(`/signals/${sym}`, { params: { interval: iv, use_ai: ai } });
       setSignal(data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSignalLoading(false);
-    }
+    } finally { setSignalLoading(false); }
   }, []);
 
   useEffect(() => {
-    loadTickers();
-    loadPortfolio();
-    loadMetrics();
-    loadBot();
-    const t = window.setInterval(() => {
-      loadTickers();
-      loadPortfolio();
-      loadMetrics();
-      loadBot();
-    }, 10000);
+    loadTickers(); loadPortfolio(); loadMetrics(); loadBot();
+    const t = window.setInterval(() => { loadTickers(); loadPortfolio(); loadMetrics(); loadBot(); }, 10000);
     return () => window.clearInterval(t);
   }, [loadTickers, loadPortfolio, loadMetrics, loadBot]);
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white p-3 md:p-4" data-testid="dashboard-root">
-      <TopBar
-        portfolio={portfolio}
-        metrics={metrics}
-        botStatus={botStatus}
-        onRefresh={() => { loadPortfolio(); loadMetrics(); loadBot(); }}
-      />
+      <TopBar portfolio={portfolio} metrics={metrics} botStatus={botStatus} onRefresh={() => { loadPortfolio(); loadMetrics(); loadBot(); }} />
 
-      <MarketStrip
-        tickers={tickers}
-        activeSymbol={symbol}
-        onSelect={(s) => setSymbol(s)}
-      />
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 md:gap-4 mt-3 md:mt-4">
-        <div className="lg:col-span-8 space-y-3 md:space-y-4">
-          <PriceChart
-            symbol={symbol}
-            interval={interval}
-            setInterval_={setInterval_}
-            signal={signal}
-            onLoadSignal={() => loadSignal(symbol, interval, true)}
-            signalLoading={signalLoading}
-          />
-          <AIInsights signal={signal} />
-          <TradeHistory onRefresh={() => { loadPortfolio(); loadMetrics(); }} />
-        </div>
-
-        <div className="lg:col-span-4 space-y-3 md:space-y-4">
-          <PortfolioPanel portfolio={portfolio} onReset={async () => { await api.post("/portfolio/reset"); loadPortfolio(); loadMetrics(); }} />
-          <BotControl status={botStatus} onChange={loadBot} />
-          <ManualTradePanel symbol={symbol} onDone={() => { loadPortfolio(); loadMetrics(); }} />
-          <LiveSignals />
-        </div>
+      <div className="flex items-center gap-2 mb-3" data-testid="tabs">
+        {[
+          { id: "trade", label: "Live Trading" },
+          { id: "backtest", label: "Backtest" },
+        ].map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`kbd-label px-3 py-2 rounded-sm transition-colors ${tab === t.id ? "bg-[#007AFF] text-white" : "bg-white/[0.03] hover:bg-white/5 text-white/70 border border-white/10"}`}
+            data-testid={`tab-${t.id}`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
+      {tab === "trade" && (
+        <>
+          <MarketStrip tickers={tickers} activeSymbol={symbol} onSelect={setSymbol} />
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 md:gap-4 mt-3 md:mt-4">
+            <div className="lg:col-span-8 space-y-3 md:space-y-4">
+              <PriceChart symbol={symbol} interval={interval} setInterval_={setInterval_} signal={signal} onLoadSignal={() => loadSignal(symbol, interval, true)} signalLoading={signalLoading} />
+              <AIInsights signal={signal} />
+              <TradeHistory onRefresh={() => { loadPortfolio(); loadMetrics(); }} />
+            </div>
+            <div className="lg:col-span-4 space-y-3 md:space-y-4">
+              <PortfolioPanel portfolio={portfolio} onReset={() => { loadPortfolio(); loadMetrics(); }} />
+              <BotControl status={botStatus} onChange={loadBot} />
+              <ManualTradePanel symbol={symbol} onDone={() => { loadPortfolio(); loadMetrics(); }} maxBalance={portfolio?.balance} />
+              <AlertsPanel />
+              <LiveSignals />
+            </div>
+          </div>
+        </>
+      )}
+
+      {tab === "backtest" && (
+        <div className="mt-3">
+          <BacktestPanel />
+        </div>
+      )}
+
       <div className="text-center kbd-label mt-6 py-4 opacity-60">
-        ⚠ Paper trading mode · Market data via Binance public API · AI by Claude Sonnet 4.5 · Not financial advice
+        ⚠ Paper trading mode · Data via CoinDCX public API · AI by Claude Sonnet 4.5 · Not financial advice
       </div>
     </div>
   );

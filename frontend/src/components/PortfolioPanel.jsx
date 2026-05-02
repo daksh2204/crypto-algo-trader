@@ -1,8 +1,22 @@
-import { fmtUsd, fmtPct } from "@/lib/api";
+import { useState } from "react";
+import { api, fmtInr, fmtPct } from "@/lib/api";
 import { Wallet, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 
 export default function PortfolioPanel({ portfolio, onReset }) {
   const p = portfolio;
+  const [balance, setBalance] = useState(3000);
+  const [showReset, setShowReset] = useState(false);
+
+  const doReset = async () => {
+    try {
+      await api.post("/portfolio/reset", { initial_balance: Math.max(100, Math.min(20000, balance)) });
+      toast.success(`Portfolio reset to ₹${balance}`);
+      setShowReset(false);
+      onReset?.();
+    } catch { toast.error("Reset failed"); }
+  };
+
   return (
     <div className="panel relative overflow-hidden" data-testid="portfolio-panel"
       style={{
@@ -13,28 +27,43 @@ export default function PortfolioPanel({ portfolio, onReset }) {
     >
       <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
         <Wallet className="w-4 h-4 text-[#00E676]" />
-        <span className="text-sm font-medium">Paper Portfolio</span>
-        <button className="kbd-label ml-auto inline-flex items-center gap-1 hover:text-white" onClick={onReset} data-testid="reset-portfolio-btn">
+        <span className="text-sm font-medium">Paper Wallet</span>
+        <button className="kbd-label ml-auto inline-flex items-center gap-1 hover:text-white" onClick={() => setShowReset(!showReset)} data-testid="reset-portfolio-btn">
           <RotateCcw className="w-3 h-3" /> Reset
         </button>
       </div>
       <div className="p-4 space-y-3">
         <div>
           <div className="kbd-label">Total Equity</div>
-          <div className="mono text-3xl font-medium" data-testid="equity-value">{fmtUsd(p?.total_equity ?? 0)}</div>
+          <div className="mono text-3xl font-medium" data-testid="equity-value">{fmtInr(p?.total_equity ?? 0, 2)}</div>
           <div className={`mono text-sm ${(p?.total_return_pct ?? 0) >= 0 ? "text-[#00E676]" : "text-[#FF3D00]"}`}>
-            {fmtPct(p?.total_return_pct ?? 0)} from {fmtUsd(p?.initial_balance ?? 10000)}
+            {fmtPct(p?.total_return_pct ?? 0)} from {fmtInr(p?.initial_balance ?? 0, 0)}
           </div>
         </div>
+
+        {showReset && (
+          <div className="border border-white/10 rounded-sm p-3 space-y-2 bg-white/[0.02]">
+            <div className="kbd-label">Reset balance (₹100 – ₹20,000)</div>
+            <div className="flex gap-2 items-center">
+              <input type="number" value={balance} min={100} max={20000} onChange={(e) => setBalance(parseFloat(e.target.value || "0"))} className="flex-1 bg-[#0A0A0A] border border-white/15 rounded-sm mono text-sm px-2 py-1.5" data-testid="reset-balance-input" />
+              <button onClick={doReset} className="bg-[#007AFF] hover:bg-[#0056b3] text-white text-xs px-3 py-1.5 rounded-sm font-bold" data-testid="confirm-reset-btn">CONFIRM</button>
+            </div>
+            <div className="flex gap-1">
+              {[1000, 3000, 5000, 10000, 20000].map((v) => (
+                <button key={v} onClick={() => setBalance(v)} className="kbd-label px-2 py-0.5 border border-white/10 rounded-sm hover:bg-white/5">₹{v / 1000}k</button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/10">
           <div>
             <div className="kbd-label">Cash</div>
-            <div className="mono text-sm">{fmtUsd(p?.balance ?? 0)}</div>
+            <div className="mono text-sm">{fmtInr(p?.balance ?? 0, 0)}</div>
           </div>
           <div>
             <div className="kbd-label">Position Value</div>
-            <div className="mono text-sm">{fmtUsd(p?.total_positions_value ?? 0)}</div>
+            <div className="mono text-sm">{fmtInr(p?.total_positions_value ?? 0, 0)}</div>
           </div>
         </div>
 
@@ -46,10 +75,10 @@ export default function PortfolioPanel({ portfolio, onReset }) {
                 <div key={pos.symbol} className="flex items-center justify-between px-2 py-1.5 bg-white/[0.03] rounded-sm" data-testid={`position-${pos.symbol}`}>
                   <div>
                     <div className="text-xs font-medium">{pos.symbol}</div>
-                    <div className="kbd-label">@{fmtUsd(pos.entry_price)}</div>
+                    <div className="kbd-label">@{fmtInr(pos.entry_price, 2)}</div>
                   </div>
                   <div className="text-right">
-                    <div className="mono text-xs">{fmtUsd(pos.value || 0)}</div>
+                    <div className="mono text-xs">{fmtInr(pos.value || 0, 0)}</div>
                     <div className={`mono text-xs ${(pos.pnl_pct ?? 0) >= 0 ? "text-[#00E676]" : "text-[#FF3D00]"}`}>{fmtPct(pos.pnl_pct ?? 0)}</div>
                   </div>
                 </div>

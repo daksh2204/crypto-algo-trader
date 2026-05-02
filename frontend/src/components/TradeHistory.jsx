@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, fmtUsd, fmtNum } from "@/lib/api";
+import { api, fmtInr, fmtNum } from "@/lib/api";
 import { History } from "lucide-react";
 
 export default function TradeHistory({ onRefresh }) {
@@ -42,19 +42,22 @@ export default function TradeHistory({ onRefresh }) {
             {trades.length === 0 && (
               <tr><td colSpan="7" className="px-4 py-8 text-center kbd-label">No trades yet. Start the bot or place a manual trade.</td></tr>
             )}
-            {trades.map((t) => (
-              <tr key={t.id} className="border-b border-white/[0.05] hover:bg-white/[0.02]" data-testid={`trade-${t.id}`}>
-                <td className="py-2 px-4 text-white/60">{new Date(t.timestamp).toLocaleString()}</td>
-                <td className="py-2 px-4 font-medium">{t.symbol}</td>
-                <td className={`py-2 px-4 font-bold ${t.side === "BUY" ? "text-[#00E676]" : "text-[#FF3D00]"}`}>{t.side}</td>
-                <td className="py-2 px-4 text-white/60">{t.type}</td>
-                <td className="py-2 px-4 text-right">{fmtNum(t.qty, 6)}</td>
-                <td className="py-2 px-4 text-right">{fmtUsd(t.price, t.price < 1 ? 4 : 2)}</td>
-                <td className={`py-2 px-4 text-right font-bold ${t.pnl > 0 ? "text-[#00E676]" : t.pnl < 0 ? "text-[#FF3D00]" : "text-white/40"}`}>
-                  {t.type === "OPEN" || t.type === "MANUAL" && t.side === "BUY" ? "—" : fmtUsd(t.pnl || 0)}
-                </td>
-              </tr>
-            ))}
+            {trades.map((t) => {
+              const isClose = t.type === "CLOSE" || t.type === "STOP_LOSS" || t.type === "TAKE_PROFIT" || (t.type === "MANUAL" && t.side === "SELL");
+              return (
+                <tr key={t.id} className="border-b border-white/[0.05] hover:bg-white/[0.02]" data-testid={`trade-${t.id}`}>
+                  <td className="py-2 px-4 text-white/60">{new Date(t.timestamp).toLocaleString()}</td>
+                  <td className="py-2 px-4 font-medium">{t.symbol}</td>
+                  <td className={`py-2 px-4 font-bold ${t.side === "BUY" ? "text-[#00E676]" : "text-[#FF3D00]"}`}>{t.side}</td>
+                  <td className="py-2 px-4 text-white/60">{t.type}</td>
+                  <td className="py-2 px-4 text-right">{fmtNum(t.qty, 6)}</td>
+                  <td className="py-2 px-4 text-right">{fmtInr(t.price, t.price < 1 ? 4 : 2)}</td>
+                  <td className={`py-2 px-4 text-right font-bold ${t.pnl > 0 ? "text-[#00E676]" : t.pnl < 0 ? "text-[#FF3D00]" : "text-white/40"}`}>
+                    {isClose ? fmtInr(t.pnl || 0, 2) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

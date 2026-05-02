@@ -1,4 +1,4 @@
-import { fmtUsd, fmtPct } from "@/lib/api";
+import { fmtInr, fmtPct, shortSym } from "@/lib/api";
 
 export default function MarketStrip({ tickers, activeSymbol, onSelect }) {
   return (
@@ -15,16 +15,16 @@ export default function MarketStrip({ tickers, activeSymbol, onSelect }) {
               data-testid={`ticker-${t.symbol}`}
             >
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium tracking-tight">{t.symbol.replace("USDT", "")}</span>
-                <span className="kbd-label">USDT</span>
+                <span className="text-sm font-medium tracking-tight">{shortSym(t.symbol)}</span>
+                <span className="kbd-label">INR</span>
               </div>
-              <span className="mono text-base font-medium">{fmtUsd(t.price, t.price < 1 ? 4 : 2)}</span>
+              <span className="mono text-base font-medium">{fmtInr(t.price, t.price < 1 ? 4 : 2)}</span>
               <span className={`mono text-xs ${pos ? "text-[#00E676]" : "text-[#FF3D00]"}`}>{fmtPct(t.change_pct)}</span>
             </button>
           );
         })}
         {(!tickers || tickers.length === 0) && (
-          <div className="px-4 py-3 kbd-label">Loading market data…</div>
+          <div className="px-4 py-3 kbd-label">Loading CoinDCX market data…</div>
         )}
       </div>
     </div>

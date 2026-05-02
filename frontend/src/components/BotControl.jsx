@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
-import { Play, Square, Bot } from "lucide-react";
+import { Play, Square, Bot, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 
 const STRATS = [
@@ -12,14 +12,17 @@ const STRATS = [
 
 export default function BotControl({ status, onChange }) {
   const [cfg, setCfg] = useState({
-    symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    symbols: ["BTCINR", "ETHINR", "SOLINR"],
     interval: "15m",
     strategies: ["MA_CROSSOVER", "RSI", "MACD", "BOLLINGER"],
     use_ai: true,
-    min_confidence: 0.55,
+    min_confidence: 0.65,
+    min_strategies_agree: 2,
     stop_loss_pct: 2,
     take_profit_pct: 5,
-    position_size_pct: 10,
+    trailing_stop: true,
+    position_size_pct: 5,
+    max_daily_loss_pct: 5,
     loop_seconds: 60,
   });
   const [saving, setSaving] = useState(false);
@@ -38,19 +41,16 @@ export default function BotControl({ status, onChange }) {
     setSaving(true);
     try {
       await api.post("/bot/start", cfg);
-      toast.success("Bot started — monitoring markets");
+      toast.success("Bot running in safe mode");
       onChange?.();
-    } catch (e) { toast.error("Failed to start bot"); }
+    } catch { toast.error("Failed to start bot"); }
     finally { setSaving(false); }
   };
 
   const stop = async () => {
     setSaving(true);
-    try {
-      await api.post("/bot/stop");
-      toast.info("Bot stopped");
-      onChange?.();
-    } catch (e) { toast.error("Failed to stop bot"); }
+    try { await api.post("/bot/stop"); toast.info("Bot stopped"); onChange?.(); }
+    catch { toast.error("Failed to stop bot"); }
     finally { setSaving(false); }
   };
 
@@ -61,6 +61,9 @@ export default function BotControl({ status, onChange }) {
       <div className="px-4 py-3 border-b border-white/10 flex items-center gap-2">
         <Bot className="w-4 h-4 text-[#007AFF]" />
         <span className="text-sm font-medium">Trading Bot</span>
+        <span className="ml-auto inline-flex items-center gap-1 kbd-label text-[#00E676]">
+          <ShieldCheck className="w-3 h-3" /> SAFE
+        </span>
       </div>
       <div className="p-4 space-y-4">
         <div>
@@ -85,13 +88,12 @@ export default function BotControl({ status, onChange }) {
 
         <label className="flex items-center justify-between text-sm" data-testid="use-ai-toggle">
           <span>AI signal (Claude 4.5)</span>
-          <input
-            type="checkbox"
-            checked={cfg.use_ai}
-            disabled={running}
-            onChange={(e) => setCfg({ ...cfg, use_ai: e.target.checked })}
-            className="accent-[#007AFF] w-4 h-4"
-          />
+          <input type="checkbox" checked={cfg.use_ai} disabled={running} onChange={(e) => setCfg({ ...cfg, use_ai: e.target.checked })} className="accent-[#007AFF] w-4 h-4" />
+        </label>
+
+        <label className="flex items-center justify-between text-sm" data-testid="trailing-stop-toggle">
+          <span>Trailing stop-loss</span>
+          <input type="checkbox" checked={cfg.trailing_stop} disabled={running} onChange={(e) => setCfg({ ...cfg, trailing_stop: e.target.checked })} className="accent-[#00E676] w-4 h-4" />
         </label>
 
         <div className="grid grid-cols-2 gap-3">
@@ -99,18 +101,14 @@ export default function BotControl({ status, onChange }) {
           <NumField label="Take Profit %" value={cfg.take_profit_pct} onChange={(v) => setCfg({ ...cfg, take_profit_pct: v })} testid="tp-input" disabled={running} />
           <NumField label="Position Size %" value={cfg.position_size_pct} onChange={(v) => setCfg({ ...cfg, position_size_pct: v })} testid="size-input" disabled={running} />
           <NumField label="Min Confidence" value={cfg.min_confidence} step={0.05} onChange={(v) => setCfg({ ...cfg, min_confidence: v })} testid="conf-input" disabled={running} />
+          <NumField label="Min Strategies ≥" value={cfg.min_strategies_agree} step={1} onChange={(v) => setCfg({ ...cfg, min_strategies_agree: Math.max(1, Math.min(4, Math.round(v))) })} testid="agree-input" disabled={running} />
+          <NumField label="Daily Loss Stop %" value={cfg.max_daily_loss_pct} onChange={(v) => setCfg({ ...cfg, max_daily_loss_pct: v })} testid="dayloss-input" disabled={running} />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
             <div className="kbd-label mb-1">Interval</div>
-            <select
-              value={cfg.interval}
-              disabled={running}
-              onChange={(e) => setCfg({ ...cfg, interval: e.target.value })}
-              className="w-full bg-[#0A0A0A] border border-white/15 rounded-sm mono text-xs px-2 py-2 focus:border-[#007AFF] outline-none"
-              data-testid="interval-select"
-            >
+            <select value={cfg.interval} disabled={running} onChange={(e) => setCfg({ ...cfg, interval: e.target.value })} className="w-full bg-[#0A0A0A] border border-white/15 rounded-sm mono text-xs px-2 py-2 focus:border-[#007AFF] outline-none" data-testid="interval-select">
               {["5m", "15m", "1h", "4h"].map((iv) => <option key={iv} value={iv}>{iv}</option>)}
             </select>
           </div>
@@ -126,6 +124,11 @@ export default function BotControl({ status, onChange }) {
             <Square className="w-4 h-4" /> STOP BOT
           </button>
         )}
+        {status?.circuit_tripped && (
+          <div className="text-[11px] text-[#FF3D00] bg-[#FF3D00]/10 border border-[#FF3D00]/30 p-2 rounded-sm">
+            Daily loss circuit tripped. Reset portfolio or wait for next day to restart.
+          </div>
+        )}
       </div>
     </div>
   );
@@ -136,10 +139,7 @@ function NumField({ label, value, onChange, step = 0.5, testid, disabled }) {
     <div>
       <div className="kbd-label mb-1">{label}</div>
       <input
-        type="number"
-        step={step}
-        value={value}
-        disabled={disabled}
+        type="number" step={step} value={value} disabled={disabled}
         onChange={(e) => onChange(parseFloat(e.target.value || "0"))}
         className="w-full bg-[#0A0A0A] border border-white/15 rounded-sm mono text-xs px-2 py-2 focus:border-[#007AFF] outline-none disabled:opacity-60"
         data-testid={testid}

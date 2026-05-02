@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, fmtUsd } from "@/lib/api";
+import { api, fmtInr } from "@/lib/api";
 import { Radio } from "lucide-react";
 
 const COLOR = { BUY: "text-[#00E676]", SELL: "text-[#FF3D00]", HOLD: "text-[#FFC107]" };
@@ -36,7 +36,7 @@ export default function LiveSignals() {
                 <span className={`mono text-xs font-bold ${COLOR[s.action]}`}>{s.action}</span>
                 <span className="text-sm">{s.symbol}</span>
               </div>
-              <span className="mono text-xs">{fmtUsd(s.price, s.price < 1 ? 4 : 2)}</span>
+              <span className="mono text-xs">{fmtInr(s.price, s.price < 1 ? 4 : 2)}</span>
             </div>
             <div className="flex items-center justify-between mt-1">
               <span className="kbd-label">{(s.source || "").toUpperCase()} · conf {(s.confidence * 100).toFixed(0)}%</span>

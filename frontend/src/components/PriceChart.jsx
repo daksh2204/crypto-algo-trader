@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, fmtUsd } from "@/lib/api";
+import { api, fmtInr, shortSym } from "@/lib/api";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { Loader2 } from "lucide-react";
 
@@ -11,21 +11,14 @@ export default function PriceChart({ symbol, interval, setInterval_, signal, onL
 
   useEffect(() => {
     let alive = true;
-    (async () => {
-      setLoading(true);
+    const fetchData = async () => {
       try {
         const { data: r } = await api.get(`/market/klines/${symbol}`, { params: { interval, limit: 200 } });
         if (alive) setData(r.klines || []);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    const t = window.setInterval(async () => {
-      try {
-        const { data: r } = await api.get(`/market/klines/${symbol}`, { params: { interval, limit: 200 } });
-        if (alive) setData(r.klines || []);
-      } catch {}
-    }, 20000);
+      } catch (e) { console.error("klines", e); }
+    };
+    (async () => { setLoading(true); await fetchData(); if (alive) setLoading(false); })();
+    const t = window.setInterval(fetchData, 20000);
     return () => { alive = false; window.clearInterval(t); };
   }, [symbol, interval]);
 
@@ -40,13 +33,13 @@ export default function PriceChart({ symbol, interval, setInterval_, signal, onL
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 md:px-6 py-3 border-b border-white/10">
         <div>
           <div className="flex items-baseline gap-3">
-            <span className="text-xl font-medium tracking-tight" data-testid="chart-symbol">{symbol}</span>
-            <span className="mono text-2xl">{last ? fmtUsd(last.close, last.close < 1 ? 4 : 2) : "—"}</span>
+            <span className="text-xl font-medium tracking-tight" data-testid="chart-symbol">{shortSym(symbol)}/INR</span>
+            <span className="mono text-2xl">{last ? fmtInr(last.close, last.close < 1 ? 4 : 2) : "—"}</span>
             <span className={`mono text-sm ${pos ? "text-[#00E676]" : "text-[#FF3D00]"}`}>
               {pos ? "+" : ""}{change.toFixed(2)}% · {interval}
             </span>
           </div>
-          <div className="kbd-label mt-1">Binance · 200 candles</div>
+          <div className="kbd-label mt-1">CoinDCX · {data.length} candles</div>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex border border-white/10 rounded-sm overflow-hidden">
@@ -99,17 +92,17 @@ export default function PriceChart({ symbol, interval, setInterval_, signal, onL
                 axisLine={{ stroke: "rgba(255,255,255,0.1)" }}
                 tickLine={false}
                 tickFormatter={(v) => v.toFixed(v < 1 ? 4 : 0)}
-                width={70}
+                width={80}
               />
               <Tooltip
                 contentStyle={{ background: "#0A0A0A", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 4, fontFamily: "JetBrains Mono", fontSize: 12 }}
                 labelFormatter={(t) => new Date(t).toLocaleString()}
-                formatter={(v) => [fmtUsd(v, v < 1 ? 4 : 2), "Close"]}
+                formatter={(v) => [fmtInr(v, v < 1 ? 4 : 2), "Close"]}
               />
               {signal?.indicators?.bb_upper ? (
                 <>
-                  <ReferenceLine y={signal.indicators.bb_upper} stroke="#FFC107" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "BB Upper", fill: "#FFC107", fontSize: 10 }} />
-                  <ReferenceLine y={signal.indicators.bb_lower} stroke="#FFC107" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "BB Lower", fill: "#FFC107", fontSize: 10 }} />
+                  <ReferenceLine y={signal.indicators.bb_upper} stroke="#FFC107" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "BB↑", fill: "#FFC107", fontSize: 10 }} />
+                  <ReferenceLine y={signal.indicators.bb_lower} stroke="#FFC107" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "BB↓", fill: "#FFC107", fontSize: 10 }} />
                 </>
               ) : null}
               <Area type="monotone" dataKey="close" stroke={stroke} strokeWidth={2} fill="url(#priceGradient)" isAnimationActive={false} />

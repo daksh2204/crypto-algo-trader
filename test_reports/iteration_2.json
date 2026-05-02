@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 2 — CoinDCX/INR migration + safety + backtest + alerts. Backend: 18/18 pytest pass against public preview (root exchange=coindcx/INR, INR tickers, BTCINR klines, portfolio reset 3000 with 100-20000 validation, manual BUY/SELL with quantity_inr, AI signal Claude on BTCINR, backtest endpoint runs and returns equity_curve+trades, bot start/stop with safety config trailing+agree+dayloss, alerts list+clear). Frontend: After fixing a build-blocking import error in LiveSignals.jsx (fmtUsd→fmtInr), full dashboard renders. Verified tabs (LIVE TRADING / BACKTEST), INR ticker strip with ₹ prices, BTC/INR chart, Portfolio inline reset form + confirm, BotControl trailing-stop-toggle / agree-input / dayloss-input, start-bot-btn → stop-bot-btn flow, AlertsPanel + clear-alerts-btn, BacktestPanel run-backtest-btn produces all 6 KPIs (Return +0.30%, WinRate 0.0%, Trades 1, MaxDD 0.1%, Final ₹3,009, P&L -₹2) and equity curve renders.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/backtest", "issue": "backtest.py line 97 filters closed = [t for t in trades if t['type'] in ('STOP_LOSS','TAKE_PROFIT','END_CLOSE')] — but strategy-signal exits are recorded with type='CLOSE' (line 77). Result: total_trades, wins, losses, win_rate_pct, total_pnl, profit_factor all ignore strategy SELL closures. Reproduced with payload {symbol:'BTCINR',interval:'1h',limit:500,initial_balance:3000,min_confidence:0.55,min_strategies_agree:1}: returned total_trades=0 while trades[] contained 22 OPEN/CLOSE pairs with PnL. Fix: include 'CLOSE' in the filter on line 97."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "ManualTradePanel", "issue": "Quick amount buttons use data-testid='quick-100/500/1000/2000' but spec requested 'quick-amount-100/...'. Functional but breaks test selectors per review_request.", "selector": "[data-testid^='quick-']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PriceChart initial mount", "issues": ["Recharts width(-1)/height(-1) console warning on first paint; cosmetic, chart renders correctly afterwards. Same as iteration 1."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/backend_test.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix /app/backend/backtest.py line 97: include 'CLOSE' in closed-trade filter so strategy SELL exits are counted in total_trades / win_rate_pct / total_pnl / profit_factor.",
+    "Optional: rename ManualTradePanel quick-amount data-testids from 'quick-{v}' to 'quick-amount-{v}' per review request.",
+    "Optional: silence recharts width/height warning on PriceChart initial mount (parent container has 0 height before layout settles)."
+  ],
+  "critical_code_review_comments": [
+    "backtest.py: Hard-coded total_trades filter is the root cause of misreported metrics — see backend minor issue.",
+    "server.py: portfolio_reset wipes trades+signals+alerts every reset which is fine for paper-only but destructive; consider keeping a history collection.",
+    "server.py: /api/signals/{symbol} action-resolution ternary still complex (line 134); extract helper.",
+    "Frontend/lib/api.js — only fmtInr/fmtNum/fmtPct/shortSym are exported; LiveSignals.jsx had stale fmtUsd import that crashed the entire app at compile time. Migration cleanup was incomplete — recommend a global grep for legacy symbols (USD, USDT, fmtUsd, quantity_usd) before next iteration.",
+    "BotControl exposes new safety fields with proper data-testid; good.",
+    "ObjectId properly excluded via {'_id':0} projections."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/frontend/src/components/LiveSignals.jsx"
+  ],
+  "success_rate": {"backend": "100% (18/18 pytest)", "frontend": "≈95% (all critical flows OK; one testid name mismatch)"},
+  "test_credentials": "None — no auth required.",
+  "seed_data_creation": "Portfolio reset to ₹3000 INR multiple times during tests; alerts cleared at end; ETHINR ₹300 BUY+SELL roundtrip executed; bot start/stop cycle executed; one backtest run with 500 candles on BTCINR 1h.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test suite at /app/backend/tests/backend_test.py (18 tests, ~14s). Uses python-dotenv to read /app/frontend/.env for REACT_APP_BACKEND_URL. Trade docs use side ('BUY'/'SELL') and type ('MANUAL','BOT','CLOSE','STOP_LOSS','TAKE_PROFIT','OPEN','END_CLOSE'). Backtest type='CLOSE' is currently uncounted in metrics — see action item #1. AI signal endpoint takes 25-40s. Backtest endpoint takes 10-20s. After tests run, alerts collection is empty (last test clears it).",
+  "rca of the issue": "Backtest metric undercount RCA: /app/backend/backtest.py line 56-81 emits two exit types — line 49 emits 'STOP_LOSS'/'TAKE_PROFIT' (when price hits SL/TP), line 77 emits 'CLOSE' (when aggregate strategy signals SELL with confidence+agreement). Line 97 then computes closed = [t for t in trades if t['type'] in ('STOP_LOSS','TAKE_PROFIT','END_CLOSE')] — 'CLOSE' is excluded. Therefore any backtest where strategy SELL exits dominate (most realistic scenarios with low confidence threshold) reports total_trades=0, win_rate_pct=0, total_pnl=0, profit_factor=0 even when the trades[] tape clearly shows winning roundtrips. Mitigation: add 'CLOSE' to the tuple on line 97. The existing wins/losses arithmetic on lines 98-103 will then work correctly because each CLOSE record already carries pnl. No other code path needs to change."
+}

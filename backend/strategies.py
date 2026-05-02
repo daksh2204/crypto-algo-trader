@@ -137,8 +137,8 @@ STRATEGY_REGISTRY = {
 def aggregate_signals(klines: List[Dict], enabled: List[str]) -> Dict:
     """Combine active strategies into a single recommendation by majority + confidence."""
     signals = {}
-    buy_conf = 0.0
-    sell_conf = 0.0
+    buy_confs = []
+    sell_confs = []
     for name in enabled:
         fn = STRATEGY_REGISTRY.get(name)
         if not fn:
@@ -146,15 +146,24 @@ def aggregate_signals(klines: List[Dict], enabled: List[str]) -> Dict:
         s = fn(klines)
         signals[name] = s
         if s["action"] == "BUY":
-            buy_conf += s["confidence"]
+            buy_confs.append(s["confidence"])
         elif s["action"] == "SELL":
-            sell_conf += s["confidence"]
-    if buy_conf > sell_conf and buy_conf > 0.5:
+            sell_confs.append(s["confidence"])
+
+    buy_count = len(buy_confs)
+    sell_count = len(sell_confs)
+
+    if buy_count > sell_count and buy_count >= 1:
         action = "BUY"
-        conf = min(1.0, buy_conf / max(len(enabled), 1))
-    elif sell_conf > buy_conf and sell_conf > 0.5:
+        # agreement bonus: 1 strategy → base, 2 → +0.1, 3+ → +0.2
+        avg_conf = sum(buy_confs) / buy_count
+        bonus = 0.1 * (buy_count - 1)
+        conf = min(1.0, avg_conf + bonus)
+    elif sell_count > buy_count and sell_count >= 1:
         action = "SELL"
-        conf = min(1.0, sell_conf / max(len(enabled), 1))
+        avg_conf = sum(sell_confs) / sell_count
+        bonus = 0.1 * (sell_count - 1)
+        conf = min(1.0, avg_conf + bonus)
     else:
         action = "HOLD"
         conf = 0.3
