@@ -23,31 +23,36 @@ class TradingBot:
             "use_ai": True,
             "use_news": True,
             "loop_seconds": 60,
-            "min_confidence": 0.65,
-            "min_strategies_agree": 2,
+            "min_confidence": 0.60,            # balanced
+            "min_strategies_agree": 1,         # balanced
             "stop_loss_pct": 2.0,
             "take_profit_pct": 5.0,
             "trailing_stop": True,
             "position_size_pct": 5.0,
             "max_daily_loss_pct": 5.0,
-            "max_concurrent_positions": 3,     # NEW
-            "allow_pyramiding": False,          # NEW — add to same symbol on new signal
-            "max_positions_per_symbol": 1,      # NEW — ceiling when pyramiding
+            "max_concurrent_positions": 3,
+            "allow_pyramiding": False,
+            "max_positions_per_symbol": 1,
+            "growth_target": 4000.0,            # auto-pause when equity ≥ this
+            "auto_start": True,                 # start bot on app boot
             "mode": "PAPER",
         }
         self._day: Optional[str] = None
         self._day_start_equity: float = 0.0
         self._circuit_tripped: bool = False
+        self._target_hit: bool = False
 
     async def start(self, cfg: Optional[Dict] = None):
         if cfg:
             self.config.update({k: v for k, v in cfg.items() if k in self.config})
+        await self._persist_config()
         if self.running:
             return {"ok": True, "already_running": True, "config": self.config}
         self.running = True
+        self._target_hit = False
         self._circuit_tripped = False
         self.task = asyncio.create_task(self._run_loop())
-        await _add_alert(self.db, "INFO", "Bot started", f"Watching {len(self.config['symbols'])} pairs · max {self.config['max_concurrent_positions']} open · {'news-aware' if self.config['use_news'] else 'price-only'}")
+        await _add_alert(self.db, "INFO", "Bot started", f"Watching {len(self.config['symbols'])} pairs · target ₹{self.config['growth_target']:.0f} · {'news-aware' if self.config['use_news'] else 'price-only'}")
         return {"ok": True, "started": True, "config": self.config}
 
     async def stop(self):
@@ -61,33 +66,84 @@ class TradingBot:
         await _add_alert(self.db, "INFO", "Bot stopped", "Manual stop")
         return {"ok": True, "stopped": True}
 
+    async def _persist_config(self):
+        await self.db.bot_state.update_one(
+            {"_id": "main"},
+            {"$set": {"config": self.config, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+
+    async def load_persisted_config(self):
+        """Called on backend startup to restore saved config + optionally auto-start."""
+        doc = await self.db.bot_state.find_one({"_id": "main"})
+        if doc and isinstance(doc.get("config"), dict):
+            self.config.update({k: v for k, v in doc["config"].items() if k in self.config})
+        return self.config
+
     def status(self):
-        return {"running": self.running, "config": self.config, "circuit_tripped": self._circuit_tripped}
+        return {
+            "running": self.running,
+            "config": self.config,
+            "circuit_tripped": self._circuit_tripped,
+            "target_hit": getattr(self, "_target_hit", False),
+        }
 
     async def _run_loop(self):
         try:
+            try:
+                await self._tick()
+            except Exception:
+                logger.exception("first tick failed")
             while self.running:
-                await self._maybe_trip_circuit()
-                if self._circuit_tripped:
-                    await asyncio.sleep(self.config["loop_seconds"])
-                    continue
-                for sym in self.config["symbols"]:
-                    try:
-                        await self._evaluate_and_trade(sym)
-                    except Exception as e:
-                        logger.exception(f"eval {sym}: {e}")
-                await self._check_open_positions()
                 await asyncio.sleep(self.config["loop_seconds"])
+                if not self.running:
+                    break
+                try:
+                    await self._tick()
+                except Exception:
+                    logger.exception("tick failed")
         except asyncio.CancelledError:
             logger.info("Bot cancelled")
+
+    async def _tick(self):
+        await self._maybe_check_target()
+        if self._target_hit:
+            return
+        await self._maybe_trip_circuit()
+        if self._circuit_tripped:
+            return
+        for sym in self.config["symbols"]:
+            try:
+                await self._evaluate_and_trade(sym)
+            except Exception as e:
+                logger.exception(f"eval {sym}: {e}")
+        await self._check_open_positions()
+
+    async def _maybe_check_target(self):
+        target = self.config.get("growth_target", 0)
+        if not target or target <= 0:
+            return
+        portfolio = await get_or_create_portfolio(self.db)
+        positions = portfolio.get("positions", [])
+        positions_value = 0.0
+        for p in positions:
+            cur = await _safe_price(p["symbol"]) or p["entry_price"]
+            positions_value += cur * p["qty"]
+        equity = portfolio["balance"] + positions_value
+        if equity >= target and not self._target_hit:
+            self._target_hit = True
+            self.running = False
+            await _add_alert(self.db, "SUCCESS", "🎉 Growth target hit!", f"Equity ₹{equity:.2f} reached target ₹{target:.0f}. Bot paused — time to share CoinDCX live API keys!")
 
     async def _maybe_trip_circuit(self):
         today = str(date.today())
         portfolio = await get_or_create_portfolio(self.db)
-        current_equity = portfolio["balance"] + sum(
-            (await _safe_price(p["symbol"]) or p["entry_price"]) * p["qty"]
-            for p in portfolio.get("positions", [])
-        )
+        positions = portfolio.get("positions", [])
+        positions_value = 0.0
+        for p in positions:
+            cur = await _safe_price(p["symbol"]) or p["entry_price"]
+            positions_value += cur * p["qty"]
+        current_equity = portfolio["balance"] + positions_value
         if self._day != today:
             self._day = today
             self._day_start_equity = current_equity

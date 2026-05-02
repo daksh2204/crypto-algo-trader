@@ -61,6 +61,8 @@ class BotConfig(BaseModel):
     allow_pyramiding: Optional[bool] = None
     max_positions_per_symbol: Optional[int] = None
     use_news: Optional[bool] = None
+    growth_target: Optional[float] = None
+    auto_start: Optional[bool] = None
     mode: Optional[str] = None
 
 
@@ -394,4 +396,16 @@ async def leaderboard_apply_best():
 
 
 app.include_router(api)
+
+
+@app.on_event("startup")
+async def startup():
+    """Restore saved bot config & auto-start the bot if configured."""
+    try:
+        await bot.load_persisted_config()
+        if bot.config.get("auto_start", True):
+            await bot.start()
+            logger.info(f"Bot auto-started on app boot: {bot.config['symbols']}")
+    except Exception as e:
+        logger.exception(f"auto-start failed: {e}")
 

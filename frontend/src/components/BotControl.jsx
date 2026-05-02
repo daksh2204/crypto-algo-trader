@@ -17,8 +17,8 @@ export default function BotControl({ status, onChange }) {
     strategies: ["MA_CROSSOVER", "RSI", "MACD", "BOLLINGER"],
     use_ai: true,
     use_news: true,
-    min_confidence: 0.65,
-    min_strategies_agree: 2,
+    min_confidence: 0.6,
+    min_strategies_agree: 1,
     stop_loss_pct: 2,
     take_profit_pct: 5,
     trailing_stop: true,
@@ -27,6 +27,8 @@ export default function BotControl({ status, onChange }) {
     max_concurrent_positions: 3,
     allow_pyramiding: false,
     max_positions_per_symbol: 1,
+    growth_target: 4000,
+    auto_start: true,
     loop_seconds: 60,
   });
   const [saving, setSaving] = useState(false);
@@ -105,6 +107,11 @@ export default function BotControl({ status, onChange }) {
           <input type="checkbox" checked={cfg.trailing_stop} disabled={running} onChange={(e) => setCfg({ ...cfg, trailing_stop: e.target.checked })} className="accent-[#00E676] w-4 h-4" />
         </label>
 
+        <label className="flex items-center justify-between text-sm" data-testid="autostart-toggle">
+          <span>Auto-start on app boot</span>
+          <input type="checkbox" checked={cfg.auto_start} disabled={running} onChange={(e) => setCfg({ ...cfg, auto_start: e.target.checked })} className="accent-[#00E676] w-4 h-4" />
+        </label>
+
         <label className="flex items-center justify-between text-sm" data-testid="pyramid-toggle">
           <span>Allow pyramiding (same symbol)</span>
           <input type="checkbox" checked={cfg.allow_pyramiding} disabled={running} onChange={(e) => setCfg({ ...cfg, allow_pyramiding: e.target.checked })} className="accent-[#FFC107] w-4 h-4" />
@@ -119,6 +126,7 @@ export default function BotControl({ status, onChange }) {
           <NumField label="Daily Loss Stop %" value={cfg.max_daily_loss_pct} onChange={(v) => setCfg({ ...cfg, max_daily_loss_pct: v })} testid="dayloss-input" disabled={running} />
           <NumField label="Max Open Pos" value={cfg.max_concurrent_positions} step={1} onChange={(v) => setCfg({ ...cfg, max_concurrent_positions: Math.max(1, Math.min(8, Math.round(v))) })} testid="maxpos-input" disabled={running} />
           <NumField label="Per-Symbol Max" value={cfg.max_positions_per_symbol} step={1} onChange={(v) => setCfg({ ...cfg, max_positions_per_symbol: Math.max(1, Math.min(4, Math.round(v))) })} testid="persym-input" disabled={running || !cfg.allow_pyramiding} />
+          <NumField label="Growth Target ₹" value={cfg.growth_target} step={500} onChange={(v) => setCfg({ ...cfg, growth_target: v })} testid="target-input" disabled={running} />
         </div>
 
         <div className="grid grid-cols-2 gap-3">

@@ -83,7 +83,7 @@ export default function Dashboard() {
               <TradeHistory onRefresh={() => { loadPortfolio(); loadMetrics(); }} />
             </div>
             <div className="lg:col-span-4 space-y-3 md:space-y-4">
-              <PortfolioPanel portfolio={portfolio} onReset={() => { loadPortfolio(); loadMetrics(); }} />
+              <PortfolioPanel portfolio={portfolio} onReset={() => { loadPortfolio(); loadMetrics(); }} growthTarget={botStatus?.config?.growth_target ?? 4000} />
               <BotControl status={botStatus} onChange={loadBot} />
               <ManualTradePanel symbol={symbol} onDone={() => { loadPortfolio(); loadMetrics(); }} maxBalance={portfolio?.balance} />
               <NewsPanel />

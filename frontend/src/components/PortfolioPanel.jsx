@@ -3,10 +3,15 @@ import { api, fmtInr, fmtPct } from "@/lib/api";
 import { Wallet, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
-export default function PortfolioPanel({ portfolio, onReset }) {
+export default function PortfolioPanel({ portfolio, onReset, growthTarget = 4000 }) {
   const p = portfolio;
   const [balance, setBalance] = useState(3000);
   const [showReset, setShowReset] = useState(false);
+
+  const equity = p?.total_equity ?? 0;
+  const initial = p?.initial_balance ?? 3000;
+  const targetProgress = Math.min(100, Math.max(0, ((equity - initial) / Math.max(1, growthTarget - initial)) * 100));
+  const targetHit = equity >= growthTarget;
 
   const doReset = async () => {
     try {
@@ -39,6 +44,17 @@ export default function PortfolioPanel({ portfolio, onReset }) {
           <div className={`mono text-sm ${(p?.total_return_pct ?? 0) >= 0 ? "text-[#00E676]" : "text-[#FF3D00]"}`}>
             {fmtPct(p?.total_return_pct ?? 0)} from {fmtInr(p?.initial_balance ?? 0, 0)}
           </div>
+        </div>
+
+        <div className="border border-white/10 rounded-sm p-3 bg-white/[0.02]" data-testid="growth-target">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="kbd-label">{targetHit ? "🎉 Target Hit" : "Growth Target"}</span>
+            <span className="mono text-xs">{fmtInr(equity, 0)} / {fmtInr(growthTarget, 0)}</span>
+          </div>
+          <div className="w-full bg-white/5 h-2 rounded">
+            <div className={`h-2 rounded transition-all ${targetHit ? "bg-[#00E676]" : "bg-[#007AFF]"}`} style={{ width: `${targetProgress}%` }}></div>
+          </div>
+          {targetHit && <div className="kbd-label mt-1.5 text-[#00E676]">Bot paused — share CoinDCX API keys for live mode</div>}
         </div>
 
         {showReset && (

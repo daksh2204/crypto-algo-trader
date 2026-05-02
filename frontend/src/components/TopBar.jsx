@@ -8,6 +8,7 @@ export default function TopBar({ portfolio, metrics, botStatus, onRefresh }) {
   const win = metrics?.win_rate_pct ?? 0;
   const running = botStatus?.running;
   const tripped = botStatus?.circuit_tripped;
+  const targetHit = botStatus?.target_hit;
 
   return (
     <div className="panel mb-3 md:mb-4" data-testid="top-bar">
@@ -27,9 +28,9 @@ export default function TopBar({ portfolio, metrics, botStatus, onRefresh }) {
             <span className="w-1.5 h-1.5 rounded-full bg-[#FFC107] animate-pulse"></span>
             PAPER
           </span>
-          <span className={`kbd-label inline-flex items-center gap-2 px-2 py-1 rounded-sm font-bold tracking-widest ${running ? "bg-[#00E676]/15 text-[#00E676]" : tripped ? "bg-[#FF3D00]/15 text-[#FF3D00]" : "bg-white/5 text-white/60"}`} data-testid="bot-status-badge">
-            <span className={`w-1.5 h-1.5 rounded-full ${running ? "bg-[#00E676] animate-pulse" : tripped ? "bg-[#FF3D00]" : "bg-white/40"}`}></span>
-            {running ? "BOT RUNNING" : tripped ? "CIRCUIT TRIPPED" : "BOT IDLE"}
+          <span className={`kbd-label inline-flex items-center gap-2 px-2 py-1 rounded-sm font-bold tracking-widest ${running ? "bg-[#00E676]/15 text-[#00E676]" : targetHit ? "bg-[#00E676]/25 text-[#00E676]" : tripped ? "bg-[#FF3D00]/15 text-[#FF3D00]" : "bg-white/5 text-white/60"}`} data-testid="bot-status-badge">
+            <span className={`w-1.5 h-1.5 rounded-full ${running ? "bg-[#00E676] animate-pulse" : targetHit ? "bg-[#00E676]" : tripped ? "bg-[#FF3D00]" : "bg-white/40"}`}></span>
+            {running ? "AUTO-RUNNING" : targetHit ? "🎉 TARGET HIT" : tripped ? "CIRCUIT TRIPPED" : "BOT IDLE"}
           </span>
           <span className="kbd-label inline-flex items-center gap-1 text-[#00E676]">
             <ShieldCheck className="w-3 h-3" /> SAFE MODE

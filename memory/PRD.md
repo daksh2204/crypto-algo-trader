@@ -90,3 +90,19 @@
 ### Status
 - 29/29 backend tests pass
 - Ready for CoinDCX live API integration next (pending user providing keys)
+
+---
+
+## Iteration 4 — Auto-start + Growth Target + Balanced Mode (2026-02-28)
+
+### Changes
+- **Bot auto-starts on backend boot** (`@app.on_event("startup")` calls `bot.load_persisted_config()` + `bot.start()` if `auto_start=True`)
+- **Bot config persisted** in `db.bot_state` (single doc `_id=main`)
+- **Growth target** ₹4,000 default — bot auto-pauses with success alert when equity ≥ target
+- **Balanced defaults**: `min_confidence=0.6`, `min_strategies_agree=1` (was 0.65/2) for ~5-10 trades/day
+- **Immediate first tick** — bot runs evaluation immediately on start (no 60s wait)
+- **Robust loop** — exception in tick no longer kills bot loop
+- **UI**: `AUTO-RUNNING` / `🎉 TARGET HIT` badge in TopBar, growth-progress bar in PortfolioPanel, growth-target field + auto-start toggle in BotControl
+
+### Bug fixed
+- `_maybe_check_target` and `_maybe_trip_circuit` were using async generator inside `sum()` (TypeError) which silently killed the bot loop. Refactored to explicit for-loops.
