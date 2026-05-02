@@ -67,3 +67,26 @@
 - P1: CoinDCX authenticated trading API (HMAC SHA-256 signing) when user is ready to go live
 - P2: Email/Telegram notifications (user chose in-app only for now)
 - P2: Multi-symbol concurrent positions
+
+---
+
+## Iteration 3 — News Sentiment + Leaderboard + Multi-Symbol (2026-02-28)
+
+### Major changes
+- **Multi-symbol concurrent positions:** portfolio.positions is now a LIST supporting multiple open positions simultaneously across different symbols. New config: `max_concurrent_positions` (default 3), `allow_pyramiding` (default false), `max_positions_per_symbol`.
+- **News-sentiment layer** injected into Claude AI prompt: CoinDesk RSS headlines + CoinGecko trending coins + alternative.me Fear & Greed index. AI now returns `sentiment_score` (-1..1) and `news_summary`.
+- **Strategy Leaderboard** sweeps 3 symbols × 2 intervals × 2 param-sets, ranks by `return - 0.5*drawdown + 2*winrate`, persists in db.leaderboard. `POST /api/leaderboard/apply-best` auto-tunes bot to top config.
+
+### New endpoints
+- `GET /api/news`, `GET /api/news/{symbol}`
+- `POST /api/leaderboard/run`, `GET /api/leaderboard`, `POST /api/leaderboard/apply-best`
+
+### New UI
+- Tabs: Live Trading | Backtest | Leaderboard
+- NewsPanel (market intel + F&G gauge + trending chips + CoinDesk headlines)
+- LeaderboardPanel (ranked table with RUN SWEEP / APPLY BEST buttons)
+- AIInsights now shows Sentiment Layer section
+
+### Status
+- 29/29 backend tests pass
+- Ready for CoinDCX live API integration next (pending user providing keys)
