@@ -87,6 +87,29 @@ export default function AIInsights({ signal }) {
                 </div>
               </div>
             )}
+            {ai?.news_summary && (
+              <div className="pt-2 border-t border-white/10">
+                <div className="kbd-label mb-1">Sentiment Layer</div>
+                <div className="flex flex-wrap gap-2 items-center">
+                  {ai.news_summary.fear_greed && (
+                    <span className="mono text-xs px-2 py-0.5 bg-white/5 border border-white/10 rounded-sm">
+                      F&G {ai.news_summary.fear_greed.value} · {ai.news_summary.fear_greed.classification}
+                    </span>
+                  )}
+                  <span className="mono text-xs px-2 py-0.5 bg-white/5 border border-white/10 rounded-sm">
+                    {ai.news_summary.headlines_count} headlines
+                  </span>
+                  {(ai.news_summary.trending || []).map((t) => (
+                    <span key={t} className="mono text-xs px-2 py-0.5 bg-[#FF3D00]/10 text-[#FF3D00] border border-[#FF3D00]/20 rounded-sm">🔥 {t}</span>
+                  ))}
+                  {typeof ai.sentiment_score === "number" && (
+                    <span className={`mono text-xs px-2 py-0.5 border rounded-sm ${ai.sentiment_score > 0.2 ? "bg-[#00E676]/10 border-[#00E676]/30 text-[#00E676]" : ai.sentiment_score < -0.2 ? "bg-[#FF3D00]/10 border-[#FF3D00]/30 text-[#FF3D00]" : "bg-white/5 border-white/10"}`}>
+                      sentiment {ai.sentiment_score > 0 ? "+" : ""}{ai.sentiment_score.toFixed(2)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
             {classical?.per_strategy && (
               <div>
                 <div className="kbd-label mb-1">Classical Strategies</div>

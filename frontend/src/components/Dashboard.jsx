@@ -11,6 +11,8 @@ import PortfolioPanel from "@/components/PortfolioPanel";
 import ManualTradePanel from "@/components/ManualTradePanel";
 import AlertsPanel from "@/components/AlertsPanel";
 import BacktestPanel from "@/components/BacktestPanel";
+import LeaderboardPanel from "@/components/LeaderboardPanel";
+import NewsPanel from "@/components/NewsPanel";
 
 export default function Dashboard() {
   const [symbol, setSymbol] = useState("BTCINR");
@@ -58,6 +60,7 @@ export default function Dashboard() {
         {[
           { id: "trade", label: "Live Trading" },
           { id: "backtest", label: "Backtest" },
+          { id: "leaderboard", label: "Leaderboard" },
         ].map((t) => (
           <button
             key={t.id}
@@ -83,6 +86,7 @@ export default function Dashboard() {
               <PortfolioPanel portfolio={portfolio} onReset={() => { loadPortfolio(); loadMetrics(); }} />
               <BotControl status={botStatus} onChange={loadBot} />
               <ManualTradePanel symbol={symbol} onDone={() => { loadPortfolio(); loadMetrics(); }} maxBalance={portfolio?.balance} />
+              <NewsPanel />
               <AlertsPanel />
               <LiveSignals />
             </div>
@@ -93,6 +97,12 @@ export default function Dashboard() {
       {tab === "backtest" && (
         <div className="mt-3">
           <BacktestPanel />
+        </div>
+      )}
+
+      {tab === "leaderboard" && (
+        <div className="mt-3">
+          <LeaderboardPanel />
         </div>
       )}
 

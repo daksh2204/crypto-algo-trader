@@ -18,6 +18,8 @@ from strategies import aggregate_signals, combined_indicators, STRATEGY_REGISTRY
 from ai_signals import generate_ai_signal
 from bot import TradingBot, get_or_create_portfolio, _log_trade, _save_portfolio, _add_alert
 from backtest import run_backtest
+from news_sentiment import get_news_bundle, fetch_coindesk_headlines, fetch_fear_greed, fetch_coingecko_trending
+from leaderboard import run_leaderboard_sweep, get_best_config
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger("algo-trader")
@@ -55,6 +57,10 @@ class BotConfig(BaseModel):
     trailing_stop: Optional[bool] = None
     position_size_pct: Optional[float] = None
     max_daily_loss_pct: Optional[float] = None
+    max_concurrent_positions: Optional[int] = None
+    allow_pyramiding: Optional[bool] = None
+    max_positions_per_symbol: Optional[int] = None
+    use_news: Optional[bool] = None
     mode: Optional[str] = None
 
 
@@ -264,31 +270,32 @@ async def manual_trade(t: ManualTrade):
     price = await get_price(symbol)
     portfolio_doc = await get_or_create_portfolio(db)
     balance = portfolio_doc["balance"]
-    positions = {p["symbol"]: p for p in portfolio_doc.get("positions", [])}
+    positions = list(portfolio_doc.get("positions", []))
     if side == "BUY":
-        if symbol in positions:
-            raise HTTPException(400, "Already have an open position for this symbol")
+        if any(p["symbol"] == symbol for p in positions):
+            raise HTTPException(400, "Already have an open position for this symbol (manual trades don't pyramid)")
         if t.quantity_inr > balance:
             raise HTTPException(400, "Insufficient paper balance")
         qty = t.quantity_inr / price
         new_pos = {
+            "id": str(uuid.uuid4()),
             "symbol": symbol, "qty": qty, "entry_price": price, "peak": price,
             "entry_time": datetime.now(timezone.utc).isoformat(),
             "stop_loss": price * (1 - bot.config["stop_loss_pct"] / 100),
             "take_profit": price * (1 + bot.config["take_profit_pct"] / 100),
         }
-        positions[symbol] = new_pos
-        await _save_portfolio(db, balance - t.quantity_inr, list(positions.values()))
+        positions.append(new_pos)
+        await _save_portfolio(db, balance - t.quantity_inr, positions)
         doc = await _log_trade(db, symbol, "BUY", qty, price, "MANUAL", {"action": "BUY", "confidence": 1.0})
         await _add_alert(db, "INFO", f"Manual BUY {symbol}", f"₹{t.quantity_inr:.0f} @ ₹{price:.2f}")
         return doc
     else:
-        if symbol not in positions:
+        idx = next((i for i, p in enumerate(positions) if p["symbol"] == symbol), -1)
+        if idx < 0:
             raise HTTPException(400, "No open position to sell")
-        pos = positions[symbol]
+        pos = positions.pop(idx)
         pnl = (price - pos["entry_price"]) * pos["qty"]
-        del positions[symbol]
-        await _save_portfolio(db, balance + pos["qty"] * price, list(positions.values()))
+        await _save_portfolio(db, balance + pos["qty"] * price, positions)
         doc = await _log_trade(db, symbol, "SELL", pos["qty"], price, "MANUAL", {"action": "SELL", "confidence": 1.0}, pnl=pnl, entry_price=pos["entry_price"])
         await _add_alert(db, "SUCCESS" if pnl >= 0 else "WARN", f"Manual SELL {symbol}", f"P&L ₹{pnl:.2f}")
         return doc
@@ -327,10 +334,64 @@ async def backtest(req: BacktestRequest):
         raise HTTPException(500, str(e))
 
 
-app.include_router(api)
-
-
 @app.on_event("shutdown")
 async def shutdown():
     await bot.stop()
     client.close()
+
+
+@api.get("/news/{symbol}")
+async def news_for_symbol(symbol: str):
+    try:
+        return await get_news_bundle(symbol.upper())
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
+@api.get("/news")
+async def news_overview():
+    try:
+        headlines, fng, trending = await fetch_coindesk_headlines(10), await fetch_fear_greed(), await fetch_coingecko_trending(10)
+        return {"headlines": headlines, "fear_greed": fng, "trending": trending}
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+
+@api.post("/leaderboard/run")
+async def leaderboard_run():
+    try:
+        results = await run_leaderboard_sweep(db)
+        return {"ok": True, "count": len(results), "top": results[:5]}
+    except Exception as e:
+        logger.exception("leaderboard")
+        raise HTTPException(500, str(e))
+
+
+@api.get("/leaderboard")
+async def leaderboard_list(limit: int = Query(20, ge=1, le=100)):
+    docs = await db.leaderboard.find({}, {"_id": 0}).sort("score", -1).to_list(limit)
+    last_run = await db.leaderboard_runs.find_one({}, {"_id": 0}, sort=[("ran_at", -1)])
+    return {"leaderboard": docs, "last_run": last_run}
+
+
+@api.post("/leaderboard/apply-best")
+async def leaderboard_apply_best():
+    best = await get_best_config(db)
+    if not best:
+        raise HTTPException(400, "No leaderboard results — run sweep first")
+    cfg = {
+        "symbols": [best["symbol"]],
+        "interval": best["interval"],
+        "min_confidence": best["min_confidence"],
+        "min_strategies_agree": best["min_strategies_agree"],
+        "stop_loss_pct": best["stop_loss_pct"],
+        "take_profit_pct": best["take_profit_pct"],
+        "trailing_stop": best["trailing_stop"],
+    }
+    bot.config.update(cfg)
+    await _add_alert(db, "INFO", "Auto-tuned", f"Applied best config: {best['symbol']}/{best['interval']} · score {best['score']}")
+    return {"ok": True, "applied": cfg, "best": best}
+
+
+app.include_router(api)
+

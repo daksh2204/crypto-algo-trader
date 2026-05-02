@@ -16,6 +16,7 @@ export default function BotControl({ status, onChange }) {
     interval: "15m",
     strategies: ["MA_CROSSOVER", "RSI", "MACD", "BOLLINGER"],
     use_ai: true,
+    use_news: true,
     min_confidence: 0.65,
     min_strategies_agree: 2,
     stop_loss_pct: 2,
@@ -23,6 +24,9 @@ export default function BotControl({ status, onChange }) {
     trailing_stop: true,
     position_size_pct: 5,
     max_daily_loss_pct: 5,
+    max_concurrent_positions: 3,
+    allow_pyramiding: false,
+    max_positions_per_symbol: 1,
     loop_seconds: 60,
   });
   const [saving, setSaving] = useState(false);
@@ -91,9 +95,19 @@ export default function BotControl({ status, onChange }) {
           <input type="checkbox" checked={cfg.use_ai} disabled={running} onChange={(e) => setCfg({ ...cfg, use_ai: e.target.checked })} className="accent-[#007AFF] w-4 h-4" />
         </label>
 
+        <label className="flex items-center justify-between text-sm" data-testid="use-news-toggle">
+          <span>News + sentiment layer</span>
+          <input type="checkbox" checked={cfg.use_news} disabled={running || !cfg.use_ai} onChange={(e) => setCfg({ ...cfg, use_news: e.target.checked })} className="accent-[#007AFF] w-4 h-4" />
+        </label>
+
         <label className="flex items-center justify-between text-sm" data-testid="trailing-stop-toggle">
           <span>Trailing stop-loss</span>
           <input type="checkbox" checked={cfg.trailing_stop} disabled={running} onChange={(e) => setCfg({ ...cfg, trailing_stop: e.target.checked })} className="accent-[#00E676] w-4 h-4" />
+        </label>
+
+        <label className="flex items-center justify-between text-sm" data-testid="pyramid-toggle">
+          <span>Allow pyramiding (same symbol)</span>
+          <input type="checkbox" checked={cfg.allow_pyramiding} disabled={running} onChange={(e) => setCfg({ ...cfg, allow_pyramiding: e.target.checked })} className="accent-[#FFC107] w-4 h-4" />
         </label>
 
         <div className="grid grid-cols-2 gap-3">
@@ -103,6 +117,8 @@ export default function BotControl({ status, onChange }) {
           <NumField label="Min Confidence" value={cfg.min_confidence} step={0.05} onChange={(v) => setCfg({ ...cfg, min_confidence: v })} testid="conf-input" disabled={running} />
           <NumField label="Min Strategies ≥" value={cfg.min_strategies_agree} step={1} onChange={(v) => setCfg({ ...cfg, min_strategies_agree: Math.max(1, Math.min(4, Math.round(v))) })} testid="agree-input" disabled={running} />
           <NumField label="Daily Loss Stop %" value={cfg.max_daily_loss_pct} onChange={(v) => setCfg({ ...cfg, max_daily_loss_pct: v })} testid="dayloss-input" disabled={running} />
+          <NumField label="Max Open Pos" value={cfg.max_concurrent_positions} step={1} onChange={(v) => setCfg({ ...cfg, max_concurrent_positions: Math.max(1, Math.min(8, Math.round(v))) })} testid="maxpos-input" disabled={running} />
+          <NumField label="Per-Symbol Max" value={cfg.max_positions_per_symbol} step={1} onChange={(v) => setCfg({ ...cfg, max_positions_per_symbol: Math.max(1, Math.min(4, Math.round(v))) })} testid="persym-input" disabled={running || !cfg.allow_pyramiding} />
         </div>
 
         <div className="grid grid-cols-2 gap-3">

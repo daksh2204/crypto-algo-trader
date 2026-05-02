@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 3 — News-sentiment + Leaderboard + multi-symbol concurrent positions all PASS. Backend 29/29 pytest green (18 prior + 11 new). New tests cover: GET /api/news (fear_greed.value=0-100, classification, trending list, headlines with title/summary/url), GET /api/news/BTCINR (symbol-specific bundle), POST /api/leaderboard/run (count=12 ≥6 in ~10s, sweep across 3 syms × 2 ivs × 2 params), GET /api/leaderboard (sorted desc by score + last_run.ran_at), POST /api/leaderboard/apply-best (returns ok+applied+best, would 400 if no results), GET /api/signals/BTCINR returns ai.sentiment_score (float) and ai.news_summary (fear_greed, trending, headlines_count), portfolio.positions is now LIST, multi-symbol BUY BTCINR+ETHINR both succeed and balance debits correctly (₹3000→₹2000), SELL closes the FIFO position leaving ETHINR open, /api/bot/start accepts max_concurrent_positions=3 / allow_pyramiding=false / max_positions_per_symbol=1 / use_news=true and reflects them in /api/bot/status. Frontend on public preview URL renders all 3 tabs; NewsPanel shows fear-greed bar + 8 trending chips + 6 headline links; LeaderboardPanel shows run-sweep-btn + apply-best-btn + 12 ranked rows (lb-row-0 highlighted); BotControl exposes use-news-toggle / pyramid-toggle / maxpos-input / persym-input / trailing-stop-toggle; apply-best click fired Auto-tuned toast (SOLINR/1h). No console errors, no error DOM elements. Recharts width(-1)/height(-1) warning persists on initial chart mount (cosmetic, same as iteration 2).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/backtest", "issue": "(carry-over from iter 2) /app/backend/backtest.py line 97 closed-trade filter still excludes 'CLOSE' type. total_trades / win_rate_pct / total_pnl / profit_factor undercount when strategy SELL exits dominate. Out of scope for iter 3 review but unfixed."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PriceChart initial mount", "issues": ["Recharts width(-1)/height(-1) console warning before container settles; cosmetic, chart renders fine after first paint."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iter3_news_leaderboard.py",
+    "/app/test_reports/pytest/iter3_full.xml"
+  ],
+  "action_items": [
+    "(carry-over) Fix /app/backend/backtest.py line 97 — include 'CLOSE' in the closed-trade filter so strategy SELL exits are counted.",
+    "(optional) Suppress Recharts width/height warning by giving the chart container an explicit minHeight before data arrives."
+  ],
+  "critical_code_review_comments": [
+    "server.py line 396: app.include_router(api) is correctly placed AFTER all @api.* decorators — no missing routes.",
+    "bot.py: positions is now consistently a list throughout; manual_trade in server.py rebuilds list with index lookup (FIFO) — correct.",
+    "leaderboard.py: composite score = total_return_pct - 0.5*max_drawdown_pct + 2*(win_rate_pct/100) — sensible; results sorted desc and persisted with delete_many+insert_many (clean replace).",
+    "news_sentiment.py: 5-min in-memory cache with graceful fallback to last good cache on fetch failure — robust; uses User-Agent header on RSS pull.",
+    "ai_signals.py: news context is injected into Claude prompt with use_news flag wired through bot.config; sentiment_score persisted on signal doc.",
+    "Manual BUY refuses pyramiding even when bot.config.allow_pyramiding=true — manual endpoint is intentionally locked to single position per symbol (good UX safeguard but worth documenting).",
+    "Frontend BotControl disables persym-input unless allow_pyramiding is on — good correctness UX.",
+    "ObjectId properly excluded via {'_id':0} on every find()."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter3_news_leaderboard.py"
+  ],
+  "success_rate": {"backend": "100% (29/29 pytest, 11 new)", "frontend": "100% on critical flows (tabs, news panel, leaderboard panel, bot safety fields, apply-best toast)"},
+  "test_credentials": "None — no auth required.",
+  "seed_data_creation": "Portfolio reset to ₹3000 multiple times during tests; multi-symbol BTCINR+ETHINR BUY then BTCINR SELL roundtrip; leaderboard sweep persisted 12 entries (3 syms × 2 ivs × 2 params); bot start/stop cycle with new safety config; alerts not cleared at end of iter 3 suite (auto-tuned alert from apply-best remains).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test suites: /app/backend/tests/backend_test.py (18 base) + /app/backend/tests/test_iter3_news_leaderboard.py (11 iter-3). Run together with `pytest /app/backend/tests/ -v`. Total ~30s. Leaderboard sweep ran in ~10s on this preview env (well under 120s limit). News endpoints 5-min cached so subsequent calls are fast. AI signal endpoint with use_news=true takes 25-40s and now returns ai.sentiment_score + ai.news_summary{fear_greed,trending,headlines_count}. Portfolio.positions is a LIST; manual BUY refuses same-symbol duplicates regardless of bot.config.allow_pyramiding (only the bot's automatic _execute_paper_trade respects pyramiding). Carry-over backtest CLOSE-filter bug still unfixed in /app/backend/backtest.py line 97.",
+  "rca of the issue": "No new bugs found in iter 3 scope. Carry-over backtest metric undercount RCA from iter 2 still applies and is now documented under minor."
+}
