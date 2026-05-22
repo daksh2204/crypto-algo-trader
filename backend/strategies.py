@@ -126,6 +126,68 @@ def combined_indicators(klines: List[Dict]) -> Dict:
     return out
 
 
+def atr(klines: List[Dict], period: int = 14) -> float:
+    """Average True Range — volatility measure."""
+    df = _to_df(klines)
+    if len(df) < period + 1:
+        return 0.0
+    high = df["high"]
+    low = df["low"]
+    close = df["close"]
+    prev_close = close.shift(1)
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    return float(tr.rolling(period).mean().iloc[-1])
+
+
+def trend_strength(klines: List[Dict]) -> Dict:
+    """Detect higher-timeframe trend + momentum reversal signs."""
+    df = _to_df(klines)
+    if len(df) < 50:
+        return {"direction": "neutral", "reversal": False}
+    close = df["close"]
+    sma_20 = close.rolling(20).mean().iloc[-1]
+    sma_50 = close.rolling(50).mean().iloc[-1]
+    last = float(close.iloc[-1])
+    macd_line, sig_line, hist = _macd(close)
+    h_now, h_prev = float(hist.iloc[-1]), float(hist.iloc[-2])
+    rsi_now = float(_rsi(close).iloc[-1])
+    direction = "up" if last > sma_20 > sma_50 else "down" if last < sma_20 < sma_50 else "neutral"
+    # Bearish reversal if MACD hist just flipped negative while in uptrend, OR RSI > 70 turning down
+    bearish_rev = (h_prev > 0 and h_now < 0) or (rsi_now < float(_rsi(close).iloc[-2]) and float(_rsi(close).iloc[-2]) > 70)
+    bullish_rev = (h_prev < 0 and h_now > 0) or (rsi_now > float(_rsi(close).iloc[-2]) and float(_rsi(close).iloc[-2]) < 30)
+    return {
+        "direction": direction,
+        "reversal": bearish_rev,
+        "bullish_reversal": bullish_rev,
+        "macd_hist": h_now,
+        "rsi": rsi_now,
+    }
+
+
+def volume_confirmation(klines: List[Dict], lookback: int = 20) -> bool:
+    """Latest bar volume > 1.2× average → confirms move."""
+    df = _to_df(klines)
+    if len(df) < lookback + 1:
+        return False
+    avg = df["volume"].rolling(lookback).mean().iloc[-1]
+    return float(df["volume"].iloc[-1]) > 1.2 * float(avg)
+
+
+def find_support_resistance(klines: List[Dict], lookback: int = 50) -> Dict:
+    """Recent swing high/low as natural SR levels."""
+    df = _to_df(klines)
+    if len(df) < lookback:
+        return {"support": 0, "resistance": 0}
+    recent = df.iloc[-lookback:]
+    return {
+        "support": float(recent["low"].min()),
+        "resistance": float(recent["high"].max()),
+    }
+
+
 STRATEGY_REGISTRY = {
     "MA_CROSSOVER": ma_crossover,
     "RSI": rsi_strategy,

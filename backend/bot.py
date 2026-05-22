@@ -5,8 +5,11 @@ import uuid
 from datetime import datetime, timezone, date
 from typing import List, Dict, Optional
 from coindcx_api import get_klines, get_price
-from strategies import aggregate_signals, combined_indicators
-from ai_signals import generate_ai_signal
+from strategies import (
+    aggregate_signals, combined_indicators,
+    atr as compute_atr, trend_strength, volume_confirmation, find_support_resistance,
+)
+from ai_signals import generate_ai_signal, evaluate_position
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +36,13 @@ class TradingBot:
             "max_concurrent_positions": 4,     # use all capital across 4 coins
             "allow_pyramiding": False,
             "max_positions_per_symbol": 1,
-            "use_full_capital": True,          # NEW — auto-allocate cash/remaining_slots
+            "use_full_capital": True,
+            "smart_exits": True,                # AI re-evaluates each open position every cycle
+            "use_atr_stops": True,              # SL based on ATR (volatility) not fixed %
+            "atr_multiplier": 1.5,              # SL distance = entry - 1.5 × ATR
+            "tp1_pct": 3.0,                     # first take-profit (sell 50%) at +3%
+            "require_volume_confirm": True,     # need volume > 1.2× avg to enter
+            "require_htf_trend": True,          # need 4h trend = up for new BUYs
             "growth_target": 4000.0,
             "auto_start": True,
             "mode": "PAPER",
@@ -177,6 +186,26 @@ class TradingBot:
             final_action = "HOLD"
             final_conf = 0.3
 
+        # ---- ENTRY QUALITY FILTERS ----
+        if final_action == "BUY":
+            # Volume confirmation
+            if self.config.get("require_volume_confirm") and not volume_confirmation(klines):
+                final_action = "HOLD"
+                final_conf = 0.3
+                ai["reasoning"] = (ai.get("reasoning", "") + " | rejected: low volume")[:400]
+            # Higher-timeframe trend filter (only for buys, not sells)
+            elif self.config.get("require_htf_trend"):
+                try:
+                    htf = await get_klines(symbol, "4h", 100)
+                    if len(htf) >= 50:
+                        htf_trend = trend_strength(htf)
+                        if htf_trend["direction"] != "up":
+                            final_action = "HOLD"
+                            final_conf = 0.3
+                            ai["reasoning"] = (ai.get("reasoning", "") + f" | rejected: 4h trend = {htf_trend['direction']}")[:400]
+                except Exception:
+                    pass
+
         signal_doc = {
             "id": str(uuid.uuid4()), "symbol": symbol, "price": price,
             "action": final_action, "confidence": round(final_conf, 2),
@@ -192,12 +221,12 @@ class TradingBot:
             and final_conf >= self.config["min_confidence"]
             and agree_count >= self.config["min_strategies_agree"]
         ):
-            await self._execute_paper_trade(symbol, final_action, price, signal_doc)
+            await self._execute_paper_trade(symbol, final_action, price, signal_doc, klines)
 
-    async def _execute_paper_trade(self, symbol: str, action: str, price: float, signal: Dict):
+    async def _execute_paper_trade(self, symbol: str, action: str, price: float, signal: Dict, klines: Optional[List[Dict]] = None):
         portfolio = await get_or_create_portfolio(self.db)
         balance = portfolio["balance"]
-        positions = list(portfolio.get("positions", []))  # list of dicts now (allow duplicates)
+        positions = list(portfolio.get("positions", []))
 
         if action == "BUY":
             total_open = len(positions)
@@ -208,29 +237,49 @@ class TradingBot:
                 return
             if same_sym >= self.config.get("max_positions_per_symbol", 1):
                 return
-            # Auto-allocate capital evenly across remaining position slots when use_full_capital is ON
             if self.config.get("use_full_capital"):
                 remaining_slots = self.config["max_concurrent_positions"] - total_open
                 alloc = balance / max(1, remaining_slots)
             else:
                 alloc = balance * (self.config["position_size_pct"] / 100.0)
-            alloc = min(alloc, balance)  # never over-spend
+            alloc = min(alloc, balance)
             if alloc < 10:
                 return
             qty = alloc / price
+
+            # ---- DYNAMIC STOP-LOSS & TAKE-PROFIT ----
+            # ATR-based (volatility-adapted) preferred; AI-suggested second; fixed % fallback
+            atr_v = compute_atr(klines or [], 14) if klines else 0.0
+            ai_sl_pct = float((signal.get("ai") or {}).get("stop_loss_pct") or self.config["stop_loss_pct"])
+            ai_tp_pct = float((signal.get("ai") or {}).get("take_profit_pct") or self.config["take_profit_pct"])
+
+            if self.config.get("use_atr_stops") and atr_v > 0:
+                sl_price = price - self.config["atr_multiplier"] * atr_v
+                # use AI's TP if it's wider than ATR-derived, else 2× ATR distance
+                tp_pct = max(ai_tp_pct, (2 * atr_v / price * 100))
+                tp_price = price * (1 + tp_pct / 100)
+            else:
+                sl_price = price * (1 - ai_sl_pct / 100)
+                tp_price = price * (1 + ai_tp_pct / 100)
+
+            tp1_price = price * (1 + self.config["tp1_pct"] / 100)
+
             new_pos = {
-                "id": str(uuid.uuid4()), "symbol": symbol, "qty": qty,
+                "id": str(uuid.uuid4()), "symbol": symbol, "qty": qty, "original_qty": qty,
                 "entry_price": price, "peak": price,
                 "entry_time": datetime.now(timezone.utc).isoformat(),
-                "stop_loss": price * (1 - self.config["stop_loss_pct"] / 100),
-                "take_profit": price * (1 + self.config["take_profit_pct"] / 100),
+                "stop_loss": sl_price,
+                "take_profit": tp_price,
+                "tp1": tp1_price,
+                "partial_taken": False,
+                "atr_at_entry": atr_v,
+                "entry_reasoning": (signal.get("ai") or {}).get("reasoning", "")[:200],
             }
             positions.append(new_pos)
             await _save_portfolio(self.db, balance - alloc, positions)
             await _log_trade(self.db, symbol, "BUY", qty, price, "OPEN", signal)
-            await _add_alert(self.db, "SUCCESS", f"BUY {symbol}", f"Deployed ₹{alloc:.0f} @ ₹{price:.2f} · SL ₹{new_pos['stop_loss']:.2f} · TP ₹{new_pos['take_profit']:.2f}")
+            await _add_alert(self.db, "SUCCESS", f"BUY {symbol}", f"₹{alloc:.0f} @ ₹{price:.2f} · SL ₹{sl_price:.2f} ({((sl_price-price)/price*100):.2f}%) · TP1 ₹{tp1_price:.2f} · TP ₹{tp_price:.2f}")
         elif action == "SELL":
-            # Close oldest open position in this symbol (FIFO) if any
             idx = next((i for i, p in enumerate(positions) if p["symbol"] == symbol), -1)
             if idx < 0:
                 return
@@ -238,7 +287,7 @@ class TradingBot:
             pnl = (price - pos["entry_price"]) * pos["qty"]
             await _save_portfolio(self.db, balance + pos["qty"] * price, positions)
             await _log_trade(self.db, symbol, "SELL", pos["qty"], price, "CLOSE", signal, pnl=pnl, entry_price=pos["entry_price"])
-            await _add_alert(self.db, "SUCCESS" if pnl >= 0 else "WARN", f"SELL {symbol}", f"Closed @ ₹{price:.2f} · P&L ₹{pnl:.2f}")
+            await _add_alert(self.db, "SUCCESS" if pnl >= 0 else "WARN", f"SELL signal {symbol}", f"AI flipped bearish · Closed @ ₹{price:.2f} · P&L ₹{pnl:.2f}")
 
     async def _check_open_positions(self):
         portfolio = await get_or_create_portfolio(self.db)
@@ -247,29 +296,101 @@ class TradingBot:
             return
         balance = portfolio["balance"]
         keep = []
+
         for pos in positions:
             try:
-                price = await get_price(pos["symbol"])
+                klines = await get_klines(pos["symbol"], self.config["interval"], 100)
+                price = klines[-1]["close"] if klines else await get_price(pos["symbol"])
             except Exception:
                 keep.append(pos); continue
-            if self.config.get("trailing_stop"):
-                peak = max(pos.get("peak", pos["entry_price"]), price)
-                pos["peak"] = peak
-                trail_sl = peak * (1 - self.config["stop_loss_pct"] / 100)
+
+            # ---- 1. Update peak + dynamic trailing stop (ATR-based) ----
+            peak = max(pos.get("peak", pos["entry_price"]), price)
+            pos["peak"] = peak
+            if self.config.get("trailing_stop") and len(klines) > 20:
+                atr_v = pos.get("atr_at_entry") or compute_atr(klines, 14)
+                if self.config.get("use_atr_stops") and atr_v > 0:
+                    trail_sl = peak - self.config["atr_multiplier"] * atr_v
+                else:
+                    trail_sl = peak * (1 - self.config["stop_loss_pct"] / 100)
                 if trail_sl > pos["stop_loss"]:
                     pos["stop_loss"] = trail_sl
+
+            # ---- 2. Hard stop-loss (safety net) ----
             if price <= pos["stop_loss"]:
                 pnl = (price - pos["entry_price"]) * pos["qty"]
                 balance += pos["qty"] * price
                 await _log_trade(self.db, pos["symbol"], "SELL", pos["qty"], price, "STOP_LOSS", {}, pnl=pnl, entry_price=pos["entry_price"])
                 await _add_alert(self.db, "WARN", f"Stop-loss {pos['symbol']}", f"Exited @ ₹{price:.2f} · P&L ₹{pnl:.2f}")
-            elif price >= pos["take_profit"]:
+                continue
+
+            # ---- 3. Hard take-profit ceiling ----
+            if price >= pos["take_profit"]:
                 pnl = (price - pos["entry_price"]) * pos["qty"]
                 balance += pos["qty"] * price
                 await _log_trade(self.db, pos["symbol"], "SELL", pos["qty"], price, "TAKE_PROFIT", {}, pnl=pnl, entry_price=pos["entry_price"])
                 await _add_alert(self.db, "SUCCESS", f"Take-profit {pos['symbol']}", f"Exited @ ₹{price:.2f} · P&L ₹{pnl:.2f}")
+                continue
+
+            # ---- 4. Trend reversal exit (MACD/RSI flipped against us) ----
+            if len(klines) > 50:
+                trend = trend_strength(klines)
+                if trend.get("reversal"):
+                    pnl = (price - pos["entry_price"]) * pos["qty"]
+                    balance += pos["qty"] * price
+                    await _log_trade(self.db, pos["symbol"], "SELL", pos["qty"], price, "REVERSAL_EXIT", {"action": "SELL", "confidence": 0.7}, pnl=pnl, entry_price=pos["entry_price"])
+                    await _add_alert(self.db, "WARN" if pnl < 0 else "SUCCESS", f"Reversal exit {pos['symbol']}", f"MACD/RSI flipped bearish · P&L ₹{pnl:.2f}")
+                    continue
             else:
-                keep.append(pos)
+                trend = {}
+
+            # ---- 5. Partial take-profit at +tp1_pct ----
+            if not pos.get("partial_taken") and price >= pos["tp1"]:
+                half = pos["qty"] * 0.5
+                proceeds = half * price
+                balance += proceeds
+                pos["qty"] -= half
+                pos["partial_taken"] = True
+                # Move stop to break-even, lock in profit
+                pos["stop_loss"] = max(pos["stop_loss"], pos["entry_price"])
+                await _log_trade(self.db, pos["symbol"], "SELL", half, price, "TP1_PARTIAL", {}, pnl=(price - pos["entry_price"]) * half, entry_price=pos["entry_price"])
+                await _add_alert(self.db, "SUCCESS", f"TP1 partial {pos['symbol']}", f"Sold 50% @ ₹{price:.2f} · SL moved to break-even · letting runner ride")
+
+            # ---- 6. AI re-evaluation (smart exit) ----
+            if self.config.get("smart_exits") and self.config.get("use_ai"):
+                try:
+                    indicators = combined_indicators(klines)
+                    agg = aggregate_signals(klines, self.config["strategies"])
+                    sr = find_support_resistance(klines, 50)
+                    decision = await evaluate_position(pos["symbol"], pos, price, indicators, trend or trend_strength(klines), sr, agg["per_strategy"])
+                    if decision["decision"] == "EXIT_FULL" and decision["confidence"] >= 0.55:
+                        pnl = (price - pos["entry_price"]) * pos["qty"]
+                        balance += pos["qty"] * price
+                        await _log_trade(self.db, pos["symbol"], "SELL", pos["qty"], price, "AI_EXIT", {"action": "SELL", "confidence": decision["confidence"], "ai": {"reasoning": decision["reasoning"]}}, pnl=pnl, entry_price=pos["entry_price"])
+                        await _add_alert(self.db, "SUCCESS" if pnl >= 0 else "WARN", f"AI exit {pos['symbol']}", f"{decision['reasoning'][:140]} · P&L ₹{pnl:.2f}")
+                        continue
+                    elif decision["decision"] == "EXIT_PARTIAL" and not pos.get("partial_taken") and decision["confidence"] >= 0.5:
+                        half = pos["qty"] * 0.5
+                        proceeds = half * price
+                        balance += proceeds
+                        pos["qty"] -= half
+                        pos["partial_taken"] = True
+                        pos["stop_loss"] = max(pos["stop_loss"], pos["entry_price"])
+                        await _log_trade(self.db, pos["symbol"], "SELL", half, price, "AI_PARTIAL", {}, pnl=(price - pos["entry_price"]) * half, entry_price=pos["entry_price"])
+                        await _add_alert(self.db, "SUCCESS", f"AI partial {pos['symbol']}", decision["reasoning"][:140])
+                    # Apply AI-suggested stop tightening
+                    if decision.get("tighten_trail") and decision.get("new_stop_loss"):
+                        try:
+                            nsl = float(decision["new_stop_loss"])
+                            if pos["entry_price"] < nsl < price and nsl > pos["stop_loss"]:
+                                pos["stop_loss"] = nsl
+                        except (ValueError, TypeError):
+                            pass
+                except Exception as e:
+                    logger.warning(f"smart-exit {pos['symbol']}: {e}")
+
+            keep.append(pos)
+
         await _save_portfolio(self.db, balance, keep)
 
 

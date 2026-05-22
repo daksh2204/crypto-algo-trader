@@ -64,6 +64,12 @@ class BotConfig(BaseModel):
     growth_target: Optional[float] = None
     auto_start: Optional[bool] = None
     use_full_capital: Optional[bool] = None
+    smart_exits: Optional[bool] = None
+    use_atr_stops: Optional[bool] = None
+    atr_multiplier: Optional[float] = None
+    tp1_pct: Optional[float] = None
+    require_volume_confirm: Optional[bool] = None
+    require_htf_trend: Optional[bool] = None
     mode: Optional[str] = None
 
 

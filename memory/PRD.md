@@ -125,3 +125,38 @@
 - With 1 open + ₹2250 cash + 3 slots → next BUY uses ₹750
 - All 4 slots → 100% capital deployed across BTC + ETH + SOL + BNB
 - If any closes (SL/TP/SELL signal), remaining cash redeployed on next BUY signal
+
+---
+
+## Iteration 6 — Smart Trader Exit Engine (2026-02-28)
+
+### Now the bot trades like a real trader, not a fixed-% script
+
+**Entry quality (only BUY when ALL agree):**
+- Classical strategies + AI signal aligned
+- Volume confirmation: latest bar > 1.2× 20-bar avg
+- HTF (4h) trend filter: 4h must be uptrend for new BUYs
+- Confidence ≥ 0.55
+
+**Dynamic stop-loss (volatility-aware, NOT fixed %):**
+- `use_atr_stops=True` → SL = entry − 1.5 × ATR(14)
+- ATR adapts to each coin's volatility (BTC's 2% move ≠ DOGE's 2% move)
+- TP = max(AI-suggested, 2 × ATR distance)
+- Hard SL/TP still act as safety net
+
+**Multi-stage exits (real-trader style):**
+1. **TP1 partial** at +3%: sell 50%, move SL to break-even, let runner ride
+2. **Trailing stop** ratchets up as price climbs (ATR-based)
+3. **Trend-reversal exit**: MACD bearish cross or RSI peak rolling over → instant full close
+4. **AI re-evaluation every cycle** (`smart_exits=True`) — Claude examines each open position with current P&L, momentum, S/R, news and decides HOLD / EXIT_PARTIAL / EXIT_FULL
+5. **AI-suggested stop tightening**: if AI suggests a higher SL, bot adopts it
+6. Hard SL / TP / daily-loss circuit always act as safety net
+
+### New strategies.py helpers
+- `atr(klines, period=14)`
+- `trend_strength(klines)` — direction + reversal detection
+- `volume_confirmation(klines)`
+- `find_support_resistance(klines, lookback=50)`
+
+### New ai_signals function
+- `evaluate_position(symbol, pos, price, indicators, trend, sr, per_strategy)` — returns `{decision: HOLD|EXIT_PARTIAL|EXIT_FULL, confidence, reasoning, new_stop_loss, tighten_trail}`
