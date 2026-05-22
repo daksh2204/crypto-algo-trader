@@ -106,3 +106,22 @@
 
 ### Bug fixed
 - `_maybe_check_target` and `_maybe_trip_circuit` were using async generator inside `sum()` (TypeError) which silently killed the bot loop. Refactored to explicit for-loops.
+
+---
+
+## Iteration 5 — Aggressive Capital Deployment (2026-02-28)
+
+### Final config (user wants max-utilization mode)
+- **4 symbols watched**: BTCINR, ETHINR, SOLINR, BNBINR
+- **Position size 25%** of cash per trade (was 5%)
+- **`use_full_capital=True`** — when ON, BUY allocation = `cash / remaining_slots` (fully deploys capital across multiple coins simultaneously)
+- **Max 4 concurrent positions** — no sequential trading; capital is spread across all 4 pairs simultaneously
+- **30s loop** for faster reaction (was 60s)
+- **Confidence 0.55** + 1-strategy agreement (more trade opportunities)
+- **SL 2.5% / TP 5% / Trailing ON** · **Daily-loss circuit 7%** · **Target ₹4,000**
+
+### How it allocates capital
+- With 0 open + ₹3000 cash + 4 slots → first BUY uses ₹750
+- With 1 open + ₹2250 cash + 3 slots → next BUY uses ₹750
+- All 4 slots → 100% capital deployed across BTC + ETH + SOL + BNB
+- If any closes (SL/TP/SELL signal), remaining cash redeployed on next BUY signal

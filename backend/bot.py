@@ -17,24 +17,25 @@ class TradingBot:
         self.running = False
         self.task: Optional[asyncio.Task] = None
         self.config = {
-            "symbols": ["BTCINR", "ETHINR", "SOLINR"],
+            "symbols": ["BTCINR", "ETHINR", "SOLINR", "BNBINR"],
             "interval": "15m",
             "strategies": ["MA_CROSSOVER", "RSI", "MACD", "BOLLINGER"],
             "use_ai": True,
             "use_news": True,
-            "loop_seconds": 60,
-            "min_confidence": 0.60,            # balanced
-            "min_strategies_agree": 1,         # balanced
-            "stop_loss_pct": 2.0,
+            "loop_seconds": 30,                # faster reaction
+            "min_confidence": 0.55,            # aggressive
+            "min_strategies_agree": 1,
+            "stop_loss_pct": 2.5,
             "take_profit_pct": 5.0,
             "trailing_stop": True,
-            "position_size_pct": 5.0,
-            "max_daily_loss_pct": 5.0,
-            "max_concurrent_positions": 3,
+            "position_size_pct": 25.0,         # 25% per trade × 4 slots = 100% capital
+            "max_daily_loss_pct": 7.0,
+            "max_concurrent_positions": 4,     # use all capital across 4 coins
             "allow_pyramiding": False,
             "max_positions_per_symbol": 1,
-            "growth_target": 4000.0,            # auto-pause when equity ≥ this
-            "auto_start": True,                 # start bot on app boot
+            "use_full_capital": True,          # NEW — auto-allocate cash/remaining_slots
+            "growth_target": 4000.0,
+            "auto_start": True,
             "mode": "PAPER",
         }
         self._day: Optional[str] = None
@@ -199,7 +200,6 @@ class TradingBot:
         positions = list(portfolio.get("positions", []))  # list of dicts now (allow duplicates)
 
         if action == "BUY":
-            # count limits
             total_open = len(positions)
             same_sym = sum(1 for p in positions if p["symbol"] == symbol)
             if total_open >= self.config["max_concurrent_positions"]:
@@ -208,8 +208,14 @@ class TradingBot:
                 return
             if same_sym >= self.config.get("max_positions_per_symbol", 1):
                 return
-            alloc = balance * (self.config["position_size_pct"] / 100.0)
-            if alloc < 10 or alloc > balance:
+            # Auto-allocate capital evenly across remaining position slots when use_full_capital is ON
+            if self.config.get("use_full_capital"):
+                remaining_slots = self.config["max_concurrent_positions"] - total_open
+                alloc = balance / max(1, remaining_slots)
+            else:
+                alloc = balance * (self.config["position_size_pct"] / 100.0)
+            alloc = min(alloc, balance)  # never over-spend
+            if alloc < 10:
                 return
             qty = alloc / price
             new_pos = {
@@ -222,7 +228,7 @@ class TradingBot:
             positions.append(new_pos)
             await _save_portfolio(self.db, balance - alloc, positions)
             await _log_trade(self.db, symbol, "BUY", qty, price, "OPEN", signal)
-            await _add_alert(self.db, "SUCCESS", f"BUY {symbol}", f"Entered @ ₹{price:.2f} · SL ₹{new_pos['stop_loss']:.2f} · TP ₹{new_pos['take_profit']:.2f}")
+            await _add_alert(self.db, "SUCCESS", f"BUY {symbol}", f"Deployed ₹{alloc:.0f} @ ₹{price:.2f} · SL ₹{new_pos['stop_loss']:.2f} · TP ₹{new_pos['take_profit']:.2f}")
         elif action == "SELL":
             # Close oldest open position in this symbol (FIFO) if any
             idx = next((i for i, p in enumerate(positions) if p["symbol"] == symbol), -1)

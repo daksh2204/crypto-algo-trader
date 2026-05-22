@@ -12,24 +12,25 @@ const STRATS = [
 
 export default function BotControl({ status, onChange }) {
   const [cfg, setCfg] = useState({
-    symbols: ["BTCINR", "ETHINR", "SOLINR"],
+    symbols: ["BTCINR", "ETHINR", "SOLINR", "BNBINR"],
     interval: "15m",
     strategies: ["MA_CROSSOVER", "RSI", "MACD", "BOLLINGER"],
     use_ai: true,
     use_news: true,
-    min_confidence: 0.6,
+    min_confidence: 0.55,
     min_strategies_agree: 1,
-    stop_loss_pct: 2,
+    stop_loss_pct: 2.5,
     take_profit_pct: 5,
     trailing_stop: true,
-    position_size_pct: 5,
-    max_daily_loss_pct: 5,
-    max_concurrent_positions: 3,
+    position_size_pct: 25,
+    max_daily_loss_pct: 7,
+    max_concurrent_positions: 4,
     allow_pyramiding: false,
     max_positions_per_symbol: 1,
+    use_full_capital: true,
     growth_target: 4000,
     auto_start: true,
-    loop_seconds: 60,
+    loop_seconds: 30,
   });
   const [saving, setSaving] = useState(false);
 
@@ -105,6 +106,11 @@ export default function BotControl({ status, onChange }) {
         <label className="flex items-center justify-between text-sm" data-testid="trailing-stop-toggle">
           <span>Trailing stop-loss</span>
           <input type="checkbox" checked={cfg.trailing_stop} disabled={running} onChange={(e) => setCfg({ ...cfg, trailing_stop: e.target.checked })} className="accent-[#00E676] w-4 h-4" />
+        </label>
+
+        <label className="flex items-center justify-between text-sm" data-testid="full-capital-toggle">
+          <span className="flex items-center gap-1">Use full capital <span className="kbd-label text-[#FFC107]">aggressive</span></span>
+          <input type="checkbox" checked={cfg.use_full_capital} disabled={running} onChange={(e) => setCfg({ ...cfg, use_full_capital: e.target.checked })} className="accent-[#FFC107] w-4 h-4" />
         </label>
 
         <label className="flex items-center justify-between text-sm" data-testid="autostart-toggle">

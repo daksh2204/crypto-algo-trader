@@ -63,6 +63,7 @@ class BotConfig(BaseModel):
     use_news: Optional[bool] = None
     growth_target: Optional[float] = None
     auto_start: Optional[bool] = None
+    use_full_capital: Optional[bool] = None
     mode: Optional[str] = None
 
 
