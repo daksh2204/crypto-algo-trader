@@ -1,7 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient
+from db_fallback import DatabaseProxy
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from pathlib import Path
@@ -25,8 +25,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("algo-trader")
 
 mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ["DB_NAME"]]
+db = DatabaseProxy(mongo_url, os.environ["DB_NAME"])
 
 app = FastAPI(title="Algo Crypto Trading")
 api = APIRouter(prefix="/api")
@@ -346,7 +345,7 @@ async def backtest(req: BacktestRequest):
 @app.on_event("shutdown")
 async def shutdown():
     await bot.stop()
-    client.close()
+    db.close()
 
 
 @api.get("/news/{symbol}")
